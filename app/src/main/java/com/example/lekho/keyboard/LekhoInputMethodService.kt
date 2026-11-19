@@ -135,21 +135,21 @@ class LekhoInputMethodService : InputMethodService() {
         while (container.childCount > 1) container.removeViewAt(1)
 
         if (layout == Layout.LETTERS) {
-            addRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"), height = 45)
-            addRow(listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"), height = 48)
-            addRow(listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"), height = 48, horizontalInset = 12)
-            addRow(listOf("⇧", "z", "x", "c", "v", "b", "n", "m", "⌫"), height = 49)
-            addRow(listOf("?123", ",", "🌐", "space", ".", "↵"), height = 50)
+            addRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"), height = 51)
+            addRow(listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"), height = 54)
+            addRow(listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"), height = 54, horizontalInset = 14)
+            addRow(listOf("⇧", "z", "x", "c", "v", "b", "n", "m", "⌫"), height = 55)
+            addRow(listOf("?123", ",", "🌐", "space", ".", "↵"), height = 56)
         } else if (layout == Layout.NUMBERS) {
-            addRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"), height = 49)
-            addRow(listOf("@", "#", "\$", "%", "&", "-", "+", "(", ")", "/"), height = 49)
-            addRow(listOf("=\\<", "*", "\"", "'", ":", ";", "!", "?", "⌫"), height = 49)
-            addRow(listOf("ABC", "😊", "🌐", "space", ".", "↵"), height = 50)
+            addRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"), height = 55)
+            addRow(listOf("@", "#", "\$", "%", "&", "-", "+", "(", ")", "/"), height = 55)
+            addRow(listOf("=\\<", "*", "\"", "'", ":", ";", "!", "?", "⌫"), height = 55)
+            addRow(listOf("ABC", "😊", "🌐", "space", ".", "↵"), height = 56)
         } else {
-            addRow(listOf("~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆"), height = 49)
-            addRow(listOf("£", "¢", "€", "¥", "^", "°", "=", "{", "}", "\\"), height = 49)
-            addRow(listOf("123", "<", ">", "[", "]", "⌫"), height = 49, horizontalInset = 12)
-            addRow(listOf("ABC", "😊", "🌐", "space", ".", "↵"), height = 50)
+            addRow(listOf("~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆"), height = 55)
+            addRow(listOf("£", "¢", "€", "¥", "^", "°", "=", "{", "}", "\\"), height = 55)
+            addRow(listOf("123", "<", ">", "[", "]", "⌫"), height = 55, horizontalInset = 14)
+            addRow(listOf("ABC", "😊", "🌐", "space", ".", "↵"), height = 56)
         }
 
         // The IME window paints the navigation strip in the same tint. The spacer prevents
@@ -182,22 +182,23 @@ class LekhoInputMethodService : InputMethodService() {
                     else -> key
                 }
                 textSize = when {
-                    key == "space" -> 13f
-                    key.length == 1 && key[0].isLetter() -> 19f
-                    key == "↵" || key == "⌫" || key == "⇧" -> 19f
-                    else -> 15f
+                    key == "space" -> 15f
+                    key.length == 1 && key[0].isLetter() -> 20f
+                    key == "↵" || key == "⌫" || key == "⇧" -> 20f
+                    else -> 16f
                 }
                 isAllCaps = false
                 gravity = Gravity.CENTER
-                setTextColor(if (isModifier || key == "space") COLOR_MODIFIER_TEXT else COLOR_KEY_TEXT)
-                typeface = Typeface.DEFAULT
+                setTextColor(when { key == "🌐" -> COLOR_GLOBE; isModifier || key == "space" -> COLOR_MODIFIER_TEXT; else -> COLOR_KEY_TEXT })
+                typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+                includeFontPadding = false
                 setPadding(0, 0, 0, 0)
                 minWidth = 0
                 minHeight = 0
                 minimumWidth = 0
                 minimumHeight = 0
                 stateListAnimator = null
-                elevation = dp(if (isModifier) 0 else 1).toFloat()
+                elevation = dp(if (isModifier) 1 else 2).toFloat()
                 background = roundedKeyBackground(
                     fill = when {
                         isShiftActive -> COLOR_ACTIVE_MODIFIER
@@ -205,7 +206,7 @@ class LekhoInputMethodService : InputMethodService() {
                         else -> Color.WHITE
                     },
                     stroke = if (isModifier || key == "space" || key == "😊") COLOR_MODIFIER_BORDER else COLOR_KEY_BORDER,
-                    radius = if (key == "space") 8 else 7
+                    radius = if (key == "space") 10 else 9
                 )
                 contentDescription = when (key) {
                     "⌫" -> "Backspace. Tap to delete one character, hold to keep deleting"
@@ -228,9 +229,11 @@ class LekhoInputMethodService : InputMethodService() {
                 }
             }
             val weight = when (key) {
-                "space" -> 4.0f
-                "?123", "123", "ABC" -> 1.35f
-                "🌐", ",", "⇧", "⌫", "↵", "=\\<" -> 1.15f
+                "space" -> 3.7f
+                "?123", "123", "ABC", "↵", "⇧", "⌫" -> 1.1f
+                "🌐" -> 1.05f
+                ",", "." -> 1.0f
+                "=\\<" -> 1.15f
                 else -> 1f
             }
             row.addView(button, LinearLayout.LayoutParams(0, dp(height), weight).apply {
@@ -677,13 +680,14 @@ class LekhoInputMethodService : InputMethodService() {
         private const val MAX_HISTORY_ITEMS = 100
         private val EMOJI_SHORTCUTS = listOf("😀", "😂", "😊", "😍", "🙏", "👍", "❤️", "🎉", "😎", "🥰")
 
-        private val COLOR_PANEL = Color.rgb(240, 239, 246)
-        private val COLOR_MODIFIER = Color.rgb(225, 228, 250)
-        private val COLOR_ACTIVE_MODIFIER = Color.rgb(202, 211, 250)
-        private val COLOR_MODIFIER_BORDER = Color.rgb(220, 223, 240)
-        private val COLOR_KEY_BORDER = Color.rgb(231, 231, 238)
-        private val COLOR_KEY_TEXT = Color.rgb(33, 35, 42)
-        private val COLOR_MODIFIER_TEXT = Color.rgb(48, 55, 83)
+        private val COLOR_PANEL = Color.rgb(241, 240, 247)
+        private val COLOR_MODIFIER = Color.rgb(226, 230, 252)
+        private val COLOR_ACTIVE_MODIFIER = Color.rgb(207, 216, 253)
+        private val COLOR_MODIFIER_BORDER = Color.rgb(224, 227, 242)
+        private val COLOR_KEY_BORDER = Color.rgb(226, 226, 233)
+        private val COLOR_KEY_TEXT = Color.rgb(32, 33, 36)
+        private val COLOR_MODIFIER_TEXT = Color.rgb(43, 48, 65)
         private val COLOR_TOOL_TEXT = Color.rgb(35, 38, 47)
+        private val COLOR_GLOBE = Color.rgb(0, 188, 212)
     }
 }

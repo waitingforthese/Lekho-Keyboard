@@ -502,7 +502,7 @@ class LekhoInputMethodService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        scroll.addView(choices, HorizontalScrollView.LayoutParams(
+        scroll.addView(choices, android.widget.FrameLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.MATCH_PARENT
         ))

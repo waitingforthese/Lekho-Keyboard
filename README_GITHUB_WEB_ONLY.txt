@@ -43,3 +43,6 @@ This is an offline phonetic transliteration engine. Marathi candidates are gener
 
 VALIDATION
 The Kotlin WordEngine was compiled independently and checked for ten distinct Devanagari candidates on an unknown Roman token, ten distinct English candidates for a prefix, and key transliteration cases. The full Android Gradle build has not been run here. Wait for a successful GitHub Actions run before installing the APK.
+
+
+V1.6.1 build correction: In LekhoInputMethodService.kt, HorizontalScrollView.LayoutParams was replaced with android.widget.FrameLayout.LayoutParams. This resolves the GitHub Actions Kotlin compiler error at line 505 (Unresolved reference: LayoutParams). No UI dimensions, colors, key labels, history behavior, or transliteration logic were changed.

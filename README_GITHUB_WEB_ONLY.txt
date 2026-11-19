@@ -1,41 +1,39 @@
-LEKHO KEYBOARD V1.4 — GBOARD UI ALIGNMENT (GITHUB WEBSITE ONLY)
+LEKHO KEYBOARD V1.5 — MARATHI PHONETIC TYPING (GITHUB WEBSITE ONLY)
 
-This package combines the V1.3 performance/history improvements with the Gboard-style visual alignment requested from the two supplied screenshots.
-No Git Bash, terminal, GitHub Desktop, or local clone is required.
+This release fixes Marathi typing while retaining the existing V1.4 Gboard-style keyboard appearance. No Git Bash, terminal, GitHub Desktop, or local clone is required.
 
-FILES IN THIS PACKAGE
-1) app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt  (REPLACE)
-2) app/build.gradle.kts (REPLACE)
-3) app/src/main/java/com/example/lekho/keyboard/HistorySequence.kt (CREATE if absent; otherwise compare/keep the same)
-4) app/src/test/java/com/example/lekho/keyboard/HistorySequenceTest.kt (CREATE if absent; otherwise compare/keep the same)
+WHAT WAS FIXED
+- The old Marathi engine only converted words that existed in a small fixed dictionary. Unknown words stayed in English.
+- A larger Marathi dictionary now covers common words, phrases, places, and names, including Rahul, Arjunrao, Jagtap, and Patil.
+- A phonetic Roman-to-Devanagari fallback now converts words that are not in the dictionary.
+- Marathi candidates are shown while typing in the suggestion strip.
+- Space, comma, full stop, and Enter now finalize the current Marathi word before adding the separator/action.
+- Password/private fields remain excluded from typing history and transliteration suggestions.
+- The visual keyboard layout, font sizing, key colours, key shape, and toolbar are not intentionally changed.
+
+HOW TO TYPE MARATHI
+1. Select Marathi mode using the globe/language key. The space bar should show “मराठी”.
+2. Type with English letters. Example: namaskar, rahul, arjunrao, jagtap, patil, kavita.
+3. A Marathi candidate should appear in the suggestion strip. Tap it, or press Space to commit the Marathi form.
+4. Comma, full stop, and Enter also convert the current word before continuing.
+
+FILES TO REPLACE / CREATE
+1) Replace: app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
+2) Replace: app/src/main/java/com/example/lekho/keyboard/WordEngine.kt
+3) Replace: app/build.gradle.kts
+4) Create: app/src/test/java/com/example/lekho/keyboard/WordEngineTest.kt
 
 GITHUB WEBSITE STEPS
 A. Open https://github.com/waitingforthese/Lekho-Keyboard
-B. Create a branch from main named: v1.4-gboard-ui
-C. Switch to that branch.
-D. Replace the two existing files at the exact paths listed above by opening the file > pencil (Edit) > paste the full file contents from this package > Commit changes.
-E. Create the two HistorySequence files only if they do not already exist. Use Add file > Create new file and enter the exact path.
-F. Open a Pull Request with base=main and compare=v1.4-gboard-ui.
-G. Check GitHub Actions. Merge only after the workflow succeeds.
-
-VISUAL UPDATES
-- Match the reference Gboard's soft lavender panel and pale blue modifier keys.
-- Use white, slightly raised keys with softer rounded corners and subtle borders/shadows.
-- Increase key-row height to match the reference keyboard's overall height and key proportions.
-- Align key font size, weight, colour, space-bar label, and globe-key accent colour more closely.
-- Keep the same QWERTY row structure and the 5-item top toolbar (tools, settings, language, clipboard, history).
-
-FUNCTIONALITY RETAINED
-- Enter/editor action handling.
-- Shift and Caps Lock.
-- Long-press repeating backspace.
-- Marathi/English mode and transliteration.
-- Ordered typing history (including repeated words), max 100 entries.
-- Efficient in-place suggestion updates.
+B. Create a new branch from main named: v1.5-marathi-transliteration
+C. Open each existing file above, click the pencil (Edit), replace the complete contents with the matching file from this ZIP, and commit to the new branch.
+D. For WordEngineTest.kt, use Add file > Create new file and enter the exact path above. Paste the file contents and commit to the branch.
+E. Open a Pull Request with base=main and compare=v1.5-marathi-transliteration.
+F. Check GitHub Actions. Merge only after the build and unit tests succeed.
 
 VERSION
-versionCode = 5
-versionName = 0.5.0
+versionCode = 6
+versionName = "0.6.0"
 
-IMPORTANT
-The supplied screenshots allow a close visual match, but exact pixel-for-pixel identity with Gboard cannot be guaranteed across different phones, Android versions, display densities, font rendering, and system insets. This source has not yet been compiled by Android Gradle. Verify the GitHub Actions workflow is green before installing its APK.
+IMPORTANT LIMITATION
+This is an offline, dictionary-plus-phonetic transliteration engine, not Google's proprietary Gboard language model. Common spellings and named terms have dictionary entries; other Roman spellings are converted by phonetic rules and may need a different spelling or a suggestion choice in some cases. The source has been Kotlin-compiled and the transliteration cases in the accompanying local test runner passed, but the complete Android Gradle build still needs to pass in GitHub Actions before installing the APK.

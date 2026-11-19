@@ -25,7 +25,7 @@ import android.widget.TextView
 import java.util.Locale
 
 /**
- * Lekho Keyboard V1.2 — Gboard-inspired layout and editor-safe key handling.
+ * Lekho Keyboard V1.5 — Gboard-inspired layout with Marathi phonetic transliteration.
  * This service intentionally stores committed words only (not full messages).
  */
 class LekhoInputMethodService : InputMethodService() {
@@ -342,28 +342,14 @@ class LekhoInputMethodService : InputMethodService() {
                 refreshTopStrip()
             }
             "space" -> {
-                if (isSensitiveField()) {
-                    connection.commitText(" ", 1)
-                } else {
-                    val token = currentToken()
-                    val converted = if (marathiMode) WordEngine.transliterate(token) else null
-                    if (!token.isNullOrEmpty() && converted != null) {
-                        connection.deleteSurroundingText(token.length, 0)
-                        connection.commitText("$converted ", 1)
-                        remember(converted)
-                    } else {
-                        connection.commitText(" ", 1)
-                        if (token.isNotBlank()) remember(token)
-                    }
-                }
+                commitCurrentTokenAndSeparator(" ")
                 val shiftWasReset = shiftEnabled && !capsLock
                 if (shiftWasReset) shiftEnabled = false
                 if (shiftWasReset) renderKeys()
                 refreshTopStrip()
             }
             ",", "." -> {
-                rememberCurrentToken()
-                connection.commitText(key, 1)
+                commitCurrentTokenAndSeparator(key)
                 refreshTopStrip()
             }
             else -> {
@@ -403,7 +389,7 @@ class LekhoInputMethodService : InputMethodService() {
      */
     private fun performEnter() {
         val connection = currentInputConnection ?: return
-        rememberCurrentToken()
+        commitCurrentTokenAndSeparator()
         val info = currentInputEditorInfo
         val inputType = info?.inputType ?: InputType.TYPE_CLASS_TEXT
         val imeOptions = info?.imeOptions ?: EditorInfo.IME_ACTION_NONE
@@ -437,9 +423,29 @@ class LekhoInputMethodService : InputMethodService() {
         return before.takeLastWhile { it.isLetter() || it == '\'' }
     }
 
-    private fun rememberCurrentToken() {
-        if (isSensitiveField()) return
-        currentToken().takeIf { it.isNotBlank() }?.let(::remember)
+    /**
+     * Finalizes the Roman token as Marathi before a word boundary or editor action.
+     * This also covers punctuation and Enter, not only the Space key.
+     */
+    private fun commitCurrentTokenAndSeparator(separator: String? = null) {
+        val connection = currentInputConnection ?: return
+        if (isSensitiveField()) {
+            separator?.let { connection.commitText(it, 1) }
+            return
+        }
+
+        val token = currentToken()
+        if (token.isNotEmpty()) {
+            val converted = if (marathiMode) WordEngine.transliterate(token) else null
+            if (converted != null) {
+                connection.deleteSurroundingText(token.length, 0)
+                connection.commitText(converted, 1)
+                remember(converted)
+            } else {
+                remember(token)
+            }
+        }
+        separator?.let { connection.commitText(it, 1) }
     }
 
     private fun refreshTopStrip() {

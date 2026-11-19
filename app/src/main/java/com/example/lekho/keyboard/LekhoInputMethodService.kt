@@ -26,7 +26,7 @@ import android.widget.TextView
 import java.util.Locale
 
 /**
- * Lekho Keyboard V1.6.3 — expanded English suggestions and pause-aware typing history.
+ * Lekho Keyboard V1.6.4 — expanded English suggestions and 2-second pause-aware typing history.
  * Typing history stores committed words and words paused on for a short idle interval; full messages are not stored.
  */
 class LekhoInputMethodService : InputMethodService() {
@@ -895,7 +895,7 @@ class LekhoInputMethodService : InputMethodService() {
         private const val KEY_HISTORY = "history"
         private const val KEY_HISTORY_ENABLED = "history_enabled"
         private const val MAX_HISTORY_ITEMS = 100
-        private const val TYPING_PAUSE_SAVE_DELAY_MS = 900L
+        private const val TYPING_PAUSE_SAVE_DELAY_MS = 2000L
         private val EMOJI_SHORTCUTS = listOf("😀", "😂", "😊", "😍", "🙏", "👍", "❤️", "🎉", "😎", "🥰")
 
         private val COLOR_PANEL = Color.rgb(241, 240, 247)

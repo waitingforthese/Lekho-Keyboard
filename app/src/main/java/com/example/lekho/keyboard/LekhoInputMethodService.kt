@@ -233,9 +233,9 @@ class LekhoInputMethodService : InputMethodService() {
                         "📋" -> pasteClipboard()
                         "↕" -> pasteLastHistory()
                         else -> {
-                            val connection = currentInputConnection ?: return@setOnClickListener
-                            if (token.isNotEmpty()) connection.deleteSurroundingText(token.length, 0)
-                            connection.commitText(word, 1)
+                            val activeConnection = currentInputConnection ?: return@setOnClickListener
+                            if (token.isNotEmpty()) activeConnection.deleteSurroundingText(token.length, 0)
+                            activeConnection.commitText(word, 1)
                             remember(word)
                             refreshSuggestions()
                         }
@@ -284,12 +284,12 @@ class LekhoInputMethodService : InputMethodService() {
         val inputClass = inputType and InputType.TYPE_MASK_CLASS
         val variation = inputType and InputType.TYPE_MASK_VARIATION
         val passwordVariation =
-            (inputClass == InputType.TYPE_TEXT_CLASS && variation in setOf(
+            (inputClass == InputType.TYPE_CLASS_TEXT && variation in setOf(
                 InputType.TYPE_TEXT_VARIATION_PASSWORD,
                 InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
                 InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
             )) ||
-            (inputClass == InputType.TYPE_NUMBER_CLASS && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
+            (inputClass == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
         val explicitlyPrivate = info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0
         return passwordVariation || explicitlyPrivate
     }

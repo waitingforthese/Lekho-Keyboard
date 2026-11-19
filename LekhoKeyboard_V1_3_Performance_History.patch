@@ -1,0 +1,239 @@
+diff --git a/app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt b/app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
+index b7e8903..0000000 100644
+--- a/app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
++++ b/app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
+@@ -27,5 +27,6 @@ import java.util.Locale
+  */
+ class LekhoInputMethodService : InputMethodService() {
+     private enum class Layout { LETTERS, NUMBERS, SYMBOLS }
++    private enum class TopStripMode { TOOLBAR, SUGGESTIONS, MORE_TOOLS, EMOJI, HISTORY }
+ 
+     private var marathiMode = true
+@@ -42,5 +43,7 @@ class LekhoInputMethodService : InputMethodService() {
+ 
+     private var root: LinearLayout? = null
+     private var suggestionRow: LinearLayout? = null
++    private var activeTopStripMode: TopStripMode? = null
++    private val suggestionCells = mutableListOf<TextView>()
+     private val history = mutableListOf<String>()
+     private val prefs by lazy { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+@@ -89,7 +92,9 @@ class LekhoInputMethodService : InputMethodService() {
+         loadHistory()
+         emojiMode = false
+         historyMode = false
+         moreToolsMode = false
++        activeTopStripMode = null
++        suggestionCells.clear()
+         shiftEnabled = false
+         capsLock = false
+         renderKeys()
+@@ -350,6 +355,7 @@ class LekhoInputMethodService : InputMethodService() {
+                     }
+                 }
+-                if (!capsLock) shiftEnabled = false
++                val shiftWasReset = shiftEnabled && !capsLock
++                if (shiftWasReset) shiftEnabled = false
++                if (shiftWasReset) renderKeys()
+                 refreshTopStrip()
+-                renderKeys()
+             }
+@@ -421,4 +427,5 @@ class LekhoInputMethodService : InputMethodService() {
+-        if (!capsLock) shiftEnabled = false
++        val shiftWasReset = shiftEnabled && !capsLock
++        if (shiftWasReset) shiftEnabled = false
++        if (shiftWasReset) renderKeys()
+         refreshTopStrip()
+-        renderKeys()
+     }
+@@ -435,33 +441,86 @@ class LekhoInputMethodService : InputMethodService() {
+     private fun refreshTopStrip() {
+         val row = suggestionRow ?: return
+-        row.removeAllViews()
+-        if (isSensitiveField()) return
+-
+-        when {
+-            moreToolsMode -> showMoreTools(row)
+-            emojiMode -> showChoices(row, EMOJI_SHORTCUTS, "Emoji") { chosen ->
+-                currentInputConnection?.commitText(chosen, 1)
+-                refreshTopStrip()
+-            }
+-            historyMode -> showChoices(row, history.asReversed().take(6), "Recent words") { chosen ->
+-                currentInputConnection?.commitText(chosen, 1)
+-                refreshTopStrip()
+-            }
+-            currentToken().isNotBlank() -> {
+-                val token = currentToken()
+-                val suggestions = WordEngine.suggestions(token, marathiMode).take(3)
+-                val visible = if (suggestions.isEmpty()) listOf(token) else suggestions
+-                visible.forEach { word ->
+-                    addTopItem(row, word, word, weight = 1f) {
+-                        val connection = currentInputConnection ?: return@addTopItem
+-                        if (token.isNotEmpty()) connection.deleteSurroundingText(token.length, 0)
+-                        connection.commitText(word, 1)
+-                        remember(word)
+-                        moreToolsMode = false
+-                        refreshTopStrip()
+-                    }
+-                }
+-            }
+-            else -> showToolbar(row)
++        if (isSensitiveField()) {
++            if (row.childCount > 0) row.removeAllViews()
++            suggestionCells.clear()
++            activeTopStripMode = null
++            return
+         }
++
++        // Read the editor token once per refresh. Normal typing updates only the three
++        // existing suggestion TextViews; toolbar/history/emoji views are rebuilt only
++        // when the user changes top-strip mode.
++        val token = currentToken()
++        val mode = when {
++            moreToolsMode -> TopStripMode.MORE_TOOLS
++            emojiMode -> TopStripMode.EMOJI
++            historyMode -> TopStripMode.HISTORY
++            token.isNotBlank() -> TopStripMode.SUGGESTIONS
++            else -> TopStripMode.TOOLBAR
++        }
++
++        if (mode != activeTopStripMode) {
++            row.removeAllViews()
++            suggestionCells.clear()
++            activeTopStripMode = mode
++            when (mode) {
++                TopStripMode.SUGGESTIONS -> createSuggestionCells(row)
++                TopStripMode.TOOLBAR -> showToolbar(row)
++                TopStripMode.MORE_TOOLS -> showMoreTools(row)
++                TopStripMode.EMOJI -> showChoices(row, EMOJI_SHORTCUTS, "Emoji") { chosen ->
++                    currentInputConnection?.commitText(chosen, 1)
++                    refreshTopStrip()
++                }
++                TopStripMode.HISTORY -> showChoices(row, history.asReversed().take(6), "Recent words") { chosen ->
++                    currentInputConnection?.commitText(chosen, 1)
++                    refreshTopStrip()
++                }
++            }
++        }
++
++        if (mode == TopStripMode.SUGGESTIONS) updateSuggestionCells(token)
++    }
++
++    private fun createSuggestionCells(row: LinearLayout) {
++        repeat(3) {
++            val cell = TextView(this).apply {
++                textSize = 15f
++                gravity = Gravity.CENTER
++                setTextColor(COLOR_TOOL_TEXT)
++                isClickable = true
++                isFocusable = true
++                background = roundedKeyBackground(COLOR_PANEL, COLOR_PANEL, 10)
++                setOnClickListener { view ->
++                    val word = view.tag as? String ?: return@setOnClickListener
++                    val connection = currentInputConnection ?: return@setOnClickListener
++                    val tokenNow = currentToken()
++                    if (tokenNow.isNotEmpty()) connection.deleteSurroundingText(tokenNow.length, 0)
++                    connection.commitText(word, 1)
++                    remember(word)
++                    moreToolsMode = false
++                    refreshTopStrip()
++                }
++            }
++            suggestionCells += cell
++            row.addView(cell, LinearLayout.LayoutParams(0, -1, 1f).apply {
++                setMargins(dp(1), dp(1), dp(1), dp(1))
++            })
++        }
++    }
++
++    private fun updateSuggestionCells(token: String) {
++        val suggestions = WordEngine.suggestions(token, marathiMode).take(3)
++        val visible = if (suggestions.isEmpty()) listOf(token) else suggestions
++        suggestionCells.forEachIndexed { index, cell ->
++            val word = visible.getOrNull(index)
++            if (word == null) {
++                cell.visibility = View.INVISIBLE
++                cell.tag = null
++            } else {
++                cell.visibility = View.VISIBLE
++                cell.text = word
++                cell.tag = word
++                cell.contentDescription = "Insert $word"
++            }
++        }
+     }
+@@ -576,7 +636,8 @@ class LekhoInputMethodService : InputMethodService() {
+         val normalized = text.trim().replace('\n', ' ')
+         if (!prefs.getBoolean(KEY_HISTORY_ENABLED, true) || normalized.isBlank() || normalized.length > 120) return
+-        history.remove(normalized)
+-        history.add(normalized)
+-        while (history.size > MAX_HISTORY_ITEMS) history.removeAt(0)
++        // Preserve every committed occurrence in order, including repeated words.
++        val updatedHistory = HistorySequence.append(history, normalized, MAX_HISTORY_ITEMS)
++        history.clear()
++        history.addAll(updatedHistory)
+         prefs.edit().putString(KEY_HISTORY, history.joinToString("\n")).apply()
+     }
+
+diff --git a/app/src/main/java/com/example/lekho/keyboard/HistorySequence.kt b/app/src/main/java/com/example/lekho/keyboard/HistorySequence.kt
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/app/src/main/java/com/example/lekho/keyboard/HistorySequence.kt
+@@ -0,0 +1,12 @@
++package com.example.lekho.keyboard
++
++/** Pure helper for an ordered, duplicate-preserving local word history. */
++internal object HistorySequence {
++    fun append(history: List<String>, word: String, maxItems: Int = 100): List<String> {
++        val normalized = word.trim().replace('\n', ' ')
++        val limit = maxItems.coerceAtLeast(0)
++        if (limit == 0) return emptyList()
++        if (normalized.isBlank()) return history.takeLast(limit)
++        return (history + normalized).takeLast(limit)
++    }
++}
+
+diff --git a/app/src/test/java/com/example/lekho/keyboard/HistorySequenceTest.kt b/app/src/test/java/com/example/lekho/keyboard/HistorySequenceTest.kt
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/app/src/test/java/com/example/lekho/keyboard/HistorySequenceTest.kt
+@@ -0,0 +1,23 @@
++package com.example.lekho.keyboard
++
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class HistorySequenceTest {
++    @Test
++    fun preservesRepeatedWordsInTypingOrder() {
++        val result = HistorySequence.append(listOf("नमस्कार", "काम"), "नमस्कार")
++        assertEquals(listOf("नमस्कार", "काम", "नमस्कार"), result)
++    }
++
++    @Test
++    fun keepsOnlyTheMostRecentEntriesWhenLimitIsReached() {
++        val result = HistorySequence.append(listOf("एक", "दोन", "तीन"), "चार", maxItems = 3)
++        assertEquals(listOf("दोन", "तीन", "चार"), result)
++    }
++
++    @Test
++    fun ignoresBlankHistoryEntries() {
++        assertEquals(listOf("काम"), HistorySequence.append(listOf("काम"), "   "))
++    }
++}
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 13797a0..0000000 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -12,7 +12,7 @@ android {
+         applicationId = "com.example.lekho.keyboard"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 3
+-        versionName = "0.3.0"
++        versionCode = 4
++        versionName = "0.4.0"
+         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+     }

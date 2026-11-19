@@ -1,14 +1,18 @@
 package com.example.lekho.keyboard
 
+import java.util.Locale
+
 /**
- * Small offline Marathi phonetic dictionary for Version 1.
- * This is deliberately a starter lexicon, not a full transliteration engine.
- * Keep entries lowercase and only include words with an agreed spelling.
+ * Offline starter dictionary for Marathi phonetic typing.
+ * This is a dictionary-backed transliterator, not yet a complete language engine.
  */
 object WordEngine {
     private val marathiWords = linkedMapOf(
         "namaskar" to "नमस्कार",
         "namaste" to "नमस्ते",
+        "yashsvi" to "यशस्वी",
+        "yashasvi" to "यशस्वी",
+        "yashaswi" to "यशस्वी",
         "majha" to "माझा",
         "majhi" to "माझी",
         "maze" to "माझे",
@@ -89,10 +93,10 @@ object WordEngine {
         "we", "welcome", "what", "when", "where", "which", "with", "work", "you", "your"
     )
 
-    fun transliterate(token: String): String? = marathiWords[token.trim().lowercase()]
+    fun transliterate(token: String): String? = marathiWords[token.trim().lowercase(Locale.ROOT)]
 
     fun suggestions(token: String, marathiMode: Boolean): List<String> {
-        val key = token.trim().lowercase()
+        val key = token.trim().lowercase(Locale.ROOT)
         if (key.isBlank()) return emptyList()
 
         return if (marathiMode) {

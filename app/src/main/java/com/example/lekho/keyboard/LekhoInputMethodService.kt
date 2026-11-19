@@ -2,6 +2,7 @@ package com.example.lekho.keyboard
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -13,6 +14,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.text.InputType
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -22,18 +24,28 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.Locale
 
+/**
+ * Lekho Keyboard V1.2 — Gboard-inspired layout and editor-safe key handling.
+ * This service intentionally stores committed words only (not full messages).
+ */
 class LekhoInputMethodService : InputMethodService() {
     private enum class Layout { LETTERS, NUMBERS, SYMBOLS }
 
     private var marathiMode = true
-    private var shift = false
+    private var shiftEnabled = false
+    private var capsLock = false
+    private var lastShiftTapAt = 0L
     private var layout = Layout.LETTERS
+    private var emojiMode = false
+    private var historyMode = false
+    private var moreToolsMode = false
+
     private var root: LinearLayout? = null
     private var suggestionRow: LinearLayout? = null
     private val history = mutableListOf<String>()
-    private val prefs by lazy { getSharedPreferences("lekho_local", Context.MODE_PRIVATE) }
+    private val prefs by lazy { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
-    // Backspace repeat: tap deletes one grapheme; holding repeats until the finger is lifted.
+    // Long-press backspace: single tap deletes one grapheme; hold repeats until release.
     private val backspaceHandler = Handler(Looper.getMainLooper())
     private var backspaceHeld = false
     private var backspaceRepeated = false
@@ -43,10 +55,9 @@ class LekhoInputMethodService : InputMethodService() {
         override fun run() {
             if (!backspaceHeld || backspaceCancelled) return
             backspaceRepeated = true
-            deleteOneCharacter(refreshAfterDelete = false)
+            deleteOneGrapheme(refreshAfterDelete = false)
             val heldFor = SystemClock.uptimeMillis() - backspaceStartedAt
-            val repeatDelay = if (heldFor >= 1_000L) 22L else 48L
-            backspaceHandler.postDelayed(this, repeatDelay)
+            backspaceHandler.postDelayed(this, if (heldFor >= 900L) 28L else 55L)
         }
     }
 
@@ -55,19 +66,20 @@ class LekhoInputMethodService : InputMethodService() {
         applyNavigationBarStyle()
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(5), dp(4), 0)
-            setBackgroundColor(KEYBOARD_BACKGROUND)
-            clipToPadding = false
+            setPadding(dp(5), dp(3), dp(5), 0)
+            setBackgroundColor(COLOR_PANEL)
             clipChildren = false
+            clipToPadding = false
         }
         suggestionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(2), 0, dp(2), 0)
+            setBackgroundColor(COLOR_PANEL)
         }
-        root!!.addView(suggestionRow, LinearLayout.LayoutParams(-1, dp(44)))
+        root!!.addView(suggestionRow, LinearLayout.LayoutParams(-1, dp(46)))
         renderKeys()
-        refreshSuggestions()
+        refreshTopStrip()
         return root!!
     }
 
@@ -75,8 +87,13 @@ class LekhoInputMethodService : InputMethodService() {
         super.onStartInputView(info, restarting)
         applyNavigationBarStyle()
         loadHistory()
+        emojiMode = false
+        historyMode = false
+        moreToolsMode = false
+        shiftEnabled = false
+        capsLock = false
         renderKeys()
-        refreshSuggestions()
+        refreshTopStrip()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -91,81 +108,83 @@ class LekhoInputMethodService : InputMethodService() {
 
     private fun applyNavigationBarStyle() {
         val imeWindow = window?.window ?: return
-        imeWindow.navigationBarColor = KEYBOARD_BACKGROUND
+        imeWindow.navigationBarColor = COLOR_PANEL
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             imeWindow.isNavigationBarContrastEnforced = false
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val decor = imeWindow.decorView
-            decor.systemUiVisibility = decor.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            imeWindow.decorView.systemUiVisibility =
+                imeWindow.decorView.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         }
     }
 
-    /** Reserve the device's navigation-bar height so the bottom key row never sits under it. */
+    /** Keep all key rows above the device's system navigation controls. */
     private fun navigationBarSpacerHeight(): Int {
         val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
         val measured = if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
-        return measured.coerceIn(dp(18), dp(52))
+        return measured.coerceIn(dp(18), dp(48))
     }
 
     private fun renderKeys() {
         val container = root ?: return
         while (container.childCount > 1) container.removeViewAt(1)
 
-        val rows = when (layout) {
-            Layout.LETTERS -> listOf(
-                listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"),
-                listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"),
-                listOf("⇧", "z", "x", "c", "v", "b", "n", "m", "⌫"),
-                listOf("?123", "🌐", ",", "space", ".", "↵")
-            )
-            Layout.NUMBERS -> listOf(
-                listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
-                listOf("@", "#", "\$", "%", "&", "-", "+", "(", ")", "/"),
-                listOf("=\\<", "*", "\"", "'", ":", ";", "!", "?", "⌫"),
-                listOf("ABC", "🌐", ",", "space", ".", "↵")
-            )
-            Layout.SYMBOLS -> listOf(
-                listOf("~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆"),
-                listOf("£", "¢", "€", "¥", "^", "°", "=", "{", "}", "\\"),
-                listOf("123", "<", ">", "[", "]", "⌫"),
-                listOf("ABC", "🌐", ",", "space", ".", "↵")
-            )
+        if (layout == Layout.LETTERS) {
+            addRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"), height = 45)
+            addRow(listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"), height = 48)
+            addRow(listOf("a", "s", "d", "f", "g", "h", "j", "k", "l"), height = 48, horizontalInset = 12)
+            addRow(listOf("⇧", "z", "x", "c", "v", "b", "n", "m", "⌫"), height = 49)
+            addRow(listOf("?123", ",", "🌐", "space", ".", "↵"), height = 50)
+        } else if (layout == Layout.NUMBERS) {
+            addRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"), height = 49)
+            addRow(listOf("@", "#", "\$", "%", "&", "-", "+", "(", ")", "/"), height = 49)
+            addRow(listOf("=\\<", "*", "\"", "'", ":", ";", "!", "?", "⌫"), height = 49)
+            addRow(listOf("ABC", "😊", "🌐", "space", ".", "↵"), height = 50)
+        } else {
+            addRow(listOf("~", "`", "|", "•", "√", "π", "÷", "×", "¶", "∆"), height = 49)
+            addRow(listOf("£", "¢", "€", "¥", "^", "°", "=", "{", "}", "\\"), height = 49)
+            addRow(listOf("123", "<", ">", "[", "]", "⌫"), height = 49, horizontalInset = 12)
+            addRow(listOf("ABC", "😊", "🌐", "space", ".", "↵"), height = 50)
         }
-        rows.forEach(::addRow)
 
-        // Keep system navigation controls in their own bottom strip, below all keys.
+        // The IME window paints the navigation strip in the same tint. The spacer prevents
+        // the final key row from colliding with three-button or gesture navigation areas.
         container.addView(View(this).apply {
-            setBackgroundColor(KEYBOARD_BACKGROUND)
+            setBackgroundColor(COLOR_PANEL)
             isFocusable = false
             isClickable = false
         }, LinearLayout.LayoutParams(-1, navigationBarSpacerHeight()))
     }
 
-    private fun addRow(keys: List<String>) {
+    private fun addRow(keys: List<String>, height: Int, horizontalInset: Int = 0) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             clipChildren = false
             clipToPadding = false
+            if (horizontalInset > 0) setPadding(dp(horizontalInset), 0, dp(horizontalInset), 0)
         }
         keys.forEach { key ->
-            val special = key in setOf("⇧", "⌫", "?123", "123", "ABC", "🌐", "↵", "=\\<")
+            val isModifier = key in setOf("⇧", "⌫", "?123", "123", "ABC", "🌐", "↵", "=\\<", ",")
+            val isShiftActive = key == "⇧" && (shiftEnabled || capsLock)
             val button = Button(this).apply {
                 text = when {
                     key == "space" -> if (marathiMode) "मराठी" else "English"
                     key == "=\\<" -> "<="
-                    shift && layout == Layout.LETTERS && key.length == 1 && key[0].isLetter() -> key.uppercase(Locale.ROOT)
+                    key == "⇧" && capsLock -> "⬆"
+                    key == "⇧" -> "⇧"
+                    key.length == 1 && key[0].isLetter() && (shiftEnabled || capsLock) -> key.uppercase(Locale.ROOT)
                     else -> key
                 }
                 textSize = when {
-                    key == "space" -> 12f
-                    key.length == 1 && key[0].isLetter() -> 20f
-                    else -> 16f
+                    key == "space" -> 13f
+                    key.length == 1 && key[0].isLetter() -> 19f
+                    key == "↵" || key == "⌫" || key == "⇧" -> 19f
+                    else -> 15f
                 }
                 isAllCaps = false
                 gravity = Gravity.CENTER
-                setTextColor(KEY_TEXT)
+                setTextColor(if (isModifier || key == "space") COLOR_MODIFIER_TEXT else COLOR_KEY_TEXT)
                 typeface = Typeface.DEFAULT
                 setPadding(0, 0, 0, 0)
                 minWidth = 0
@@ -173,19 +192,24 @@ class LekhoInputMethodService : InputMethodService() {
                 minimumWidth = 0
                 minimumHeight = 0
                 stateListAnimator = null
-                elevation = dp(1).toFloat()
-                background = GradientDrawable().apply {
-                    val fill = if (special || key == "space") KEY_SPECIAL else Color.WHITE
-                    setColor(fill)
-                    cornerRadius = dp(8).toFloat()
-                    setStroke(dp(1), if (special) KEY_SPECIAL_STROKE else KEY_BORDER)
-                }
+                elevation = dp(if (isModifier) 0 else 1).toFloat()
+                background = roundedKeyBackground(
+                    fill = when {
+                        isShiftActive -> COLOR_ACTIVE_MODIFIER
+                        isModifier || key == "space" || key == "😊" -> COLOR_MODIFIER
+                        else -> Color.WHITE
+                    },
+                    stroke = if (isModifier || key == "space" || key == "😊") COLOR_MODIFIER_BORDER else COLOR_KEY_BORDER,
+                    radius = if (key == "space") 8 else 7
+                )
                 contentDescription = when (key) {
                     "⌫" -> "Backspace. Tap to delete one character, hold to keep deleting"
-                    "↵" -> "Enter"
-                    "🌐" -> "Switch language"
-                    "⇧" -> "Shift"
-                    "space" -> if (marathiMode) "Space, Marathi phonetic mode" else "Space, English mode"
+                    "↵" -> "Enter or editor action"
+                    "🌐" -> "Switch Marathi and English"
+                    "⇧" -> if (capsLock) "Caps lock on" else "Shift"
+                    "space" -> if (marathiMode) "Space, Marathi mode" else "Space, English mode"
+                    "😊" -> "Open emoji shortcuts"
+                    "," -> "Comma"
                     else -> key
                 }
                 if (key == "⌫") {
@@ -193,23 +217,30 @@ class LekhoInputMethodService : InputMethodService() {
                     setOnTouchListener { view, event -> handleBackspaceTouch(view, event) }
                 } else {
                     setOnClickListener {
-                        it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                        it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                         onKey(key)
                     }
                 }
             }
             val weight = when (key) {
-                "space" -> 4.15f
-                "?123", "123", "ABC" -> 1.45f
-                "🌐", "⇧", "⌫", "↵", "=\\<" -> 1.35f
+                "space" -> 4.0f
+                "?123", "123", "ABC" -> 1.35f
+                "🌐", ",", "⇧", "⌫", "↵", "=\\<" -> 1.15f
                 else -> 1f
             }
-            row.addView(button, LinearLayout.LayoutParams(0, dp(45), weight).apply {
+            row.addView(button, LinearLayout.LayoutParams(0, dp(height), weight).apply {
                 setMargins(dp(2), dp(2), dp(2), dp(3))
             })
         }
-        root?.addView(row, LinearLayout.LayoutParams(-1, dp(50)))
+        root?.addView(row, LinearLayout.LayoutParams(-1, dp(height + 5)))
     }
+
+    private fun roundedKeyBackground(fill: Int, stroke: Int, radius: Int): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(radius).toFloat()
+            setStroke(dp(1), stroke)
+        }
 
     private fun handleBackspaceTouch(view: View, event: MotionEvent): Boolean {
         when (event.actionMasked) {
@@ -238,7 +269,7 @@ class LekhoInputMethodService : InputMethodService() {
                 view.isPressed = false
                 backspaceHeld = false
                 backspaceHandler.removeCallbacks(repeatBackspace)
-                if (shouldClick) view.performClick() else if (backspaceRepeated) refreshSuggestions()
+                if (shouldClick) view.performClick() else if (backspaceRepeated) refreshTopStrip()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
@@ -246,7 +277,7 @@ class LekhoInputMethodService : InputMethodService() {
                 backspaceHeld = false
                 backspaceCancelled = true
                 backspaceHandler.removeCallbacks(repeatBackspace)
-                if (backspaceRepeated) refreshSuggestions()
+                if (backspaceRepeated) refreshTopStrip()
                 return true
             }
         }
@@ -256,25 +287,52 @@ class LekhoInputMethodService : InputMethodService() {
     private fun stopBackspaceRepeat(refresh: Boolean) {
         backspaceHeld = false
         backspaceHandler.removeCallbacks(repeatBackspace)
-        if (refresh && backspaceRepeated) refreshSuggestions()
+        if (refresh && backspaceRepeated) refreshTopStrip()
         backspaceRepeated = false
         backspaceCancelled = false
+    }
+
+    private fun onShiftPressed() {
+        val now = SystemClock.uptimeMillis()
+        when {
+            capsLock -> {
+                capsLock = false
+                shiftEnabled = false
+            }
+            shiftEnabled && now - lastShiftTapAt <= 450L -> {
+                capsLock = true
+                shiftEnabled = true
+            }
+            shiftEnabled -> shiftEnabled = false
+            else -> shiftEnabled = true
+        }
+        lastShiftTapAt = now
+        renderKeys()
     }
 
     private fun onKey(key: String) {
         val connection = currentInputConnection ?: return
         when (key) {
-            "⌫" -> deleteOneCharacter()
+            "⌫" -> deleteOneGrapheme()
             "↵" -> performEnter()
             "🌐" -> {
                 marathiMode = !marathiMode
+                emojiMode = false
+                historyMode = false
+                moreToolsMode = false
                 renderKeys()
-                refreshSuggestions()
+                refreshTopStrip()
             }
-            "⇧" -> { shift = !shift; renderKeys() }
+            "⇧" -> onShiftPressed()
             "?123", "123" -> { layout = Layout.NUMBERS; renderKeys() }
             "=\\<" -> { layout = Layout.SYMBOLS; renderKeys() }
             "ABC" -> { layout = Layout.LETTERS; renderKeys() }
+            "😊" -> {
+                emojiMode = !emojiMode
+                historyMode = false
+                moreToolsMode = false
+                refreshTopStrip()
+            }
             "space" -> {
                 if (isSensitiveField()) {
                     connection.commitText(" ", 1)
@@ -290,94 +348,219 @@ class LekhoInputMethodService : InputMethodService() {
                         if (token.isNotBlank()) remember(token)
                     }
                 }
-                shift = false
-                refreshSuggestions()
+                if (!capsLock) shiftEnabled = false
+                refreshTopStrip()
+                renderKeys()
             }
             ",", "." -> {
+                rememberCurrentToken()
                 connection.commitText(key, 1)
-                refreshSuggestions()
+                refreshTopStrip()
             }
             else -> {
-                val value = if (shift && layout == Layout.LETTERS) key.uppercase(Locale.ROOT) else key
+                val value = if ((shiftEnabled || capsLock) && layout == Layout.LETTERS) key.uppercase(Locale.ROOT) else key
                 connection.commitText(value, 1)
-                if (shift) { shift = false; renderKeys() }
-                refreshSuggestions()
+                if (shiftEnabled && !capsLock && layout == Layout.LETTERS) {
+                    shiftEnabled = false
+                    renderKeys()
+                }
+                refreshTopStrip()
             }
         }
     }
 
-    private fun deleteOneCharacter(refreshAfterDelete: Boolean = true) {
+    private fun deleteOneGrapheme(refreshAfterDelete: Boolean = true) {
         val connection = currentInputConnection ?: return
         val selected = connection.getSelectedText(0)
         if (!selected.isNullOrEmpty()) {
             connection.commitText("", 1)
-            if (refreshAfterDelete) refreshSuggestions()
+            if (refreshAfterDelete) refreshTopStrip()
             return
         }
-        val before = connection.getTextBeforeCursor(32, 0)?.toString().orEmpty()
+        val before = connection.getTextBeforeCursor(48, 0)?.toString().orEmpty()
         if (before.isEmpty()) return
-
-        // Delete one Unicode grapheme cluster (for example a Devanagari consonant + matra).
         val iterator = BreakIterator.getCharacterInstance(Locale.getDefault())
         iterator.setText(before)
         val boundary = iterator.preceding(before.length)
         val deleteLength = if (boundary == BreakIterator.DONE) 1 else before.length - boundary
         connection.deleteSurroundingText(deleteLength, 0)
-        if (refreshAfterDelete) refreshSuggestions()
+        if (refreshAfterDelete) refreshTopStrip()
     }
 
+    /**
+     * Handles both IME actions (Send/Search/Done) and a real newline for multiline editors.
+     * Some apps return false from performEditorAction; in that case send Enter key events,
+     * and commit a newline only when the editor did not accept the key events.
+     */
     private fun performEnter() {
         val connection = currentInputConnection ?: return
-        val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
-            ?: EditorInfo.IME_ACTION_NONE
-        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
-            connection.performEditorAction(action)
+        rememberCurrentToken()
+        val info = currentInputEditorInfo
+        val inputType = info?.inputType ?: InputType.TYPE_CLASS_TEXT
+        val imeOptions = info?.imeOptions ?: EditorInfo.IME_ACTION_NONE
+        val action = imeOptions and EditorInfo.IME_MASK_ACTION
+        val hasEditorAction = action != EditorInfo.IME_ACTION_NONE &&
+            action != EditorInfo.IME_ACTION_UNSPECIFIED
+        val isMultiline = (inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0
+        val editorForcesNewLine = (imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
+
+        // Messaging apps often use a multiline field but still expose IME_ACTION_SEND.
+        // Honor an explicit Send/Search/Done action before choosing a newline.
+        val shouldInsertNewLine = editorForcesNewLine || (isMultiline && !hasEditorAction)
+        if (shouldInsertNewLine) {
+            connection.commitText("\n", 1)
         } else {
-            connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-            connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+            val handledByAction = hasEditorAction && connection.performEditorAction(action)
+            if (!handledByAction) {
+                val downAccepted = connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+                val upAccepted = connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+                if (!downAccepted && !upAccepted) connection.commitText("\n", 1)
+            }
         }
+        if (!capsLock) shiftEnabled = false
+        refreshTopStrip()
+        renderKeys()
     }
 
     private fun currentToken(): String {
-        val before = currentInputConnection?.getTextBeforeCursor(80, 0)?.toString().orEmpty()
+        val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString().orEmpty()
         return before.takeLastWhile { it.isLetter() || it == '\'' }
     }
 
-    private fun refreshSuggestions() {
+    private fun rememberCurrentToken() {
+        if (isSensitiveField()) return
+        currentToken().takeIf { it.isNotBlank() }?.let(::remember)
+    }
+
+    private fun refreshTopStrip() {
         val row = suggestionRow ?: return
         row.removeAllViews()
         if (isSensitiveField()) return
 
-        val token = currentToken()
-        val suggestions = WordEngine.suggestions(token, marathiMode)
-        val fallback = if (token.isBlank()) listOf("📋", "↕") else listOf(token, "📋", "↕")
-        (suggestions.ifEmpty { fallback }).take(3).forEach { word ->
-            val item = TextView(this).apply {
-                text = word
-                textSize = 15f
-                gravity = Gravity.CENTER
-                setTextColor(KEY_TEXT)
-                contentDescription = when (word) {
-                    "📋" -> "Paste clipboard"
-                    "↕" -> "Paste most recent saved word"
-                    else -> "Insert $word"
-                }
-                setOnClickListener {
-                    when (word) {
-                        "📋" -> pasteClipboard()
-                        "↕" -> pasteLastHistory()
-                        else -> {
-                            val connection = currentInputConnection ?: return@setOnClickListener
-                            if (token.isNotEmpty()) connection.deleteSurroundingText(token.length, 0)
-                            connection.commitText(word, 1)
-                            remember(word)
-                            refreshSuggestions()
-                        }
+        when {
+            moreToolsMode -> showMoreTools(row)
+            emojiMode -> showChoices(row, EMOJI_SHORTCUTS, "Emoji") { chosen ->
+                currentInputConnection?.commitText(chosen, 1)
+                refreshTopStrip()
+            }
+            historyMode -> showChoices(row, history.asReversed().take(6), "Recent words") { chosen ->
+                currentInputConnection?.commitText(chosen, 1)
+                refreshTopStrip()
+            }
+            currentToken().isNotBlank() -> {
+                val token = currentToken()
+                val suggestions = WordEngine.suggestions(token, marathiMode).take(3)
+                val visible = if (suggestions.isEmpty()) listOf(token) else suggestions
+                visible.forEach { word ->
+                    addTopItem(row, word, word, weight = 1f) {
+                        val connection = currentInputConnection ?: return@addTopItem
+                        if (token.isNotEmpty()) connection.deleteSurroundingText(token.length, 0)
+                        connection.commitText(word, 1)
+                        remember(word)
+                        moreToolsMode = false
+                        refreshTopStrip()
                     }
                 }
             }
-            row.addView(item, LinearLayout.LayoutParams(0, -1, 1f))
+            else -> showToolbar(row)
         }
+    }
+
+    private fun showToolbar(row: LinearLayout) {
+        addTopItem(row, "▦", "More tools", 1f) {
+            moreToolsMode = true
+            historyMode = false
+            emojiMode = false
+            refreshTopStrip()
+        }
+        addTopItem(row, "⚙", "Keyboard settings", 1f) {
+            try {
+                startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) { }
+        }
+        addTopItem(row, "文A", "Switch Marathi and English", 1f) {
+            marathiMode = !marathiMode
+            moreToolsMode = false
+            renderKeys()
+            refreshTopStrip()
+        }
+        addTopItem(row, "▤", "Paste clipboard", 1f) { pasteClipboard() }
+        addTopItem(row, "◷", "Typing history", 1f) {
+            loadHistory()
+            historyMode = true
+            emojiMode = false
+            refreshTopStrip()
+        }
+    }
+
+
+    private fun showMoreTools(row: LinearLayout) {
+        addTopItem(row, "‹", "Back to keyboard", 0.8f) {
+            moreToolsMode = false
+            refreshTopStrip()
+        }
+        addTopItem(row, "◷", "Typing history", 1f) {
+            loadHistory()
+            historyMode = true
+            moreToolsMode = false
+            refreshTopStrip()
+        }
+        addTopItem(row, "😊", "Emoji shortcuts", 1f) {
+            emojiMode = true
+            moreToolsMode = false
+            refreshTopStrip()
+        }
+        addTopItem(row, "文A", "Switch language", 1f) {
+            marathiMode = !marathiMode
+            moreToolsMode = false
+            renderKeys()
+            refreshTopStrip()
+        }
+        addTopItem(row, "⚙", "Keyboard settings", 1f) {
+            moreToolsMode = false
+            try {
+                startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) { }
+            refreshTopStrip()
+        }
+    }
+
+    private fun showChoices(row: LinearLayout, choices: List<String>, label: String, onChoose: (String) -> Unit) {
+        if (choices.isEmpty()) {
+            addTopItem(row, "‹", "Back to keyboard", 0.8f) {
+                emojiMode = false
+                historyMode = false
+                refreshTopStrip()
+            }
+            addTopItem(row, label, label, 3.5f) { }
+            return
+        }
+        addTopItem(row, "‹", "Back to keyboard", 0.8f) {
+            emojiMode = false
+            historyMode = false
+            refreshTopStrip()
+        }
+        choices.take(5).forEach { choice -> addTopItem(row, choice, choice, 1f) { onChoose(choice) } }
+    }
+
+    private fun addTopItem(row: LinearLayout, text: String, description: String, weight: Float, onClick: () -> Unit) {
+        val item = TextView(this).apply {
+            this.text = text
+            textSize = if (text.length > 2) 14f else 21f
+            gravity = Gravity.CENTER
+            setTextColor(COLOR_TOOL_TEXT)
+            contentDescription = description
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
+            background = roundedKeyBackground(COLOR_PANEL, COLOR_PANEL, 10)
+        }
+        row.addView(item, LinearLayout.LayoutParams(0, -1, weight).apply {
+            setMargins(dp(1), dp(1), dp(1), dp(1))
+        })
     }
 
     private fun pasteClipboard() {
@@ -385,30 +568,26 @@ class LekhoInputMethodService : InputMethodService() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() ?: return
         currentInputConnection?.commitText(text, 1)
-        refreshSuggestions()
-    }
-
-    private fun pasteLastHistory() {
-        if (isSensitiveField() || !prefs.getBoolean("history_enabled", true)) return
-        loadHistory()
-        val last = history.lastOrNull() ?: return
-        currentInputConnection?.commitText(last, 1)
-        refreshSuggestions()
+        refreshTopStrip()
     }
 
     private fun remember(text: String) {
         if (isSensitiveField()) return
-        if (!prefs.getBoolean("history_enabled", true) || text.isBlank() || text.length > 100) return
-        history.remove(text)
-        history.add(text)
-        while (history.size > 30) history.removeAt(0)
-        prefs.edit().putString("history", history.joinToString("\n")).apply()
+        val normalized = text.trim().replace('\n', ' ')
+        if (!prefs.getBoolean(KEY_HISTORY_ENABLED, true) || normalized.isBlank() || normalized.length > 120) return
+        history.remove(normalized)
+        history.add(normalized)
+        while (history.size > MAX_HISTORY_ITEMS) history.removeAt(0)
+        prefs.edit().putString(KEY_HISTORY, history.joinToString("\n")).apply()
     }
 
     private fun loadHistory() {
         history.clear()
-        if (prefs.getBoolean("history_enabled", true)) {
-            history.addAll(prefs.getString("history", "").orEmpty().lines().filter { it.isNotBlank() }.takeLast(30))
+        if (prefs.getBoolean(KEY_HISTORY_ENABLED, true)) {
+            history.addAll(
+                prefs.getString(KEY_HISTORY, "").orEmpty()
+                    .lines().filter { it.isNotBlank() }.takeLast(MAX_HISTORY_ITEMS)
+            )
         }
     }
 
@@ -428,13 +607,22 @@ class LekhoInputMethodService : InputMethodService() {
         return passwordVariation || explicitlyPrivate
     }
 
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private val KEYBOARD_BACKGROUND = Color.rgb(220, 231, 242)
-        private val KEY_SPECIAL = Color.rgb(190, 213, 229)
-        private val KEY_SPECIAL_STROKE = Color.rgb(174, 199, 217)
-        private val KEY_BORDER = Color.rgb(226, 232, 238)
-        private val KEY_TEXT = Color.rgb(36, 55, 70)
+        private const val PREFS_NAME = "lekho_local"
+        private const val KEY_HISTORY = "history"
+        private const val KEY_HISTORY_ENABLED = "history_enabled"
+        private const val MAX_HISTORY_ITEMS = 100
+        private val EMOJI_SHORTCUTS = listOf("😀", "😂", "😊", "😍", "🙏", "👍", "❤️", "🎉", "😎", "🥰")
+
+        private val COLOR_PANEL = Color.rgb(240, 239, 246)
+        private val COLOR_MODIFIER = Color.rgb(225, 228, 250)
+        private val COLOR_ACTIVE_MODIFIER = Color.rgb(202, 211, 250)
+        private val COLOR_MODIFIER_BORDER = Color.rgb(220, 223, 240)
+        private val COLOR_KEY_BORDER = Color.rgb(231, 231, 238)
+        private val COLOR_KEY_TEXT = Color.rgb(33, 35, 42)
+        private val COLOR_MODIFIER_TEXT = Color.rgb(48, 55, 83)
+        private val COLOR_TOOL_TEXT = Color.rgb(35, 38, 47)
     }
 }

@@ -26,7 +26,7 @@ import android.widget.TextView
 import java.util.Locale
 
 /**
- * Lekho Keyboard V1.6 — Gboard-style layout with ten language suggestions.
+ * Lekho Keyboard V1.6.2 — Gboard-like composing and continuous suggestions.
  * This service intentionally stores committed words only (not full messages).
  */
 class LekhoInputMethodService : InputMethodService() {
@@ -34,6 +34,9 @@ class LekhoInputMethodService : InputMethodService() {
     private enum class TopStripMode { TOOLBAR, SUGGESTIONS, MORE_TOOLS, EMOJI, HISTORY }
 
     private var marathiMode = true
+    // True while the current Roman word is held as an InputConnection composing span.
+    private var composingTokenActive = false
+    private var composingSupported = true
     private var shiftEnabled = false
     private var capsLock = false
     private var lastShiftTapAt = 0L
@@ -98,8 +101,25 @@ class LekhoInputMethodService : InputMethodService() {
         suggestionCells.clear()
         shiftEnabled = false
         capsLock = false
+        composingTokenActive = false
+        composingSupported = true
         renderKeys()
         refreshTopStrip()
+    }
+
+
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        // Some editors update their selection/composing range asynchronously. Refreshing
+        // here keeps candidates synchronized even when the editor changes the text itself.
+        if (root != null) refreshTopStrip()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -355,7 +375,30 @@ class LekhoInputMethodService : InputMethodService() {
             }
             else -> {
                 val value = if ((shiftEnabled || capsLock) && layout == Layout.LETTERS) key.uppercase(Locale.ROOT) else key
-                connection.commitText(value, 1)
+                val isAlphabeticKey = layout == Layout.LETTERS && key.length == 1 && key[0].isLetter()
+                if (isAlphabeticKey && !isSensitiveField()) {
+                    // Keep the whole in-progress Roman word in a composing span, like a
+                    // conventional predictive IME. Each keystroke replaces the same span,
+                    // so suggestions continue updating for the complete token.
+                    val nextToken = currentToken() + value
+                    if (composingSupported) {
+                        composingTokenActive = connection.setComposingText(nextToken, 1)
+                        if (!composingTokenActive) {
+                            // Some third-party editors do not support composing spans.
+                            // Finalize the whole token once, then continue in plain-text mode.
+                            connection.commitText(nextToken, 1)
+                            composingSupported = false
+                        }
+                    } else {
+                        connection.commitText(value, 1)
+                    }
+                } else {
+                    if (composingTokenActive) {
+                        // End the current word before inserting a number or symbol key.
+                        commitCurrentTokenAndSeparator()
+                    }
+                    connection.commitText(value, 1)
+                }
                 if (shiftEnabled && !capsLock && layout == Layout.LETTERS) {
                     shiftEnabled = false
                     renderKeys()
@@ -370,8 +413,34 @@ class LekhoInputMethodService : InputMethodService() {
         val selected = connection.getSelectedText(0)
         if (!selected.isNullOrEmpty()) {
             connection.commitText("", 1)
+            composingTokenActive = false
             if (refreshAfterDelete) refreshTopStrip()
             return
+        }
+        if (composingTokenActive) {
+            val token = currentToken()
+            if (token.isNotEmpty()) {
+                val iterator = BreakIterator.getCharacterInstance(Locale.getDefault())
+                iterator.setText(token)
+                val boundary = iterator.preceding(token.length)
+                val keepLength = if (boundary == BreakIterator.DONE) 0 else boundary
+                val shortened = token.substring(0, keepLength)
+                if (shortened.isEmpty()) {
+                    connection.commitText("", 1)
+                    composingTokenActive = false
+                } else {
+                    val updated = connection.setComposingText(shortened, 1)
+                    composingTokenActive = updated
+                    if (!updated) {
+                        val removedLength = token.length - shortened.length
+                        connection.deleteSurroundingText(removedLength, 0)
+                        composingSupported = false
+                    }
+                }
+                if (refreshAfterDelete) refreshTopStrip()
+                return
+            }
+            composingTokenActive = false
         }
         val before = connection.getTextBeforeCursor(48, 0)?.toString().orEmpty()
         if (before.isEmpty()) return
@@ -437,16 +506,20 @@ class LekhoInputMethodService : InputMethodService() {
 
         val token = currentToken()
         if (token.isNotEmpty()) {
-            val converted = if (marathiMode) WordEngine.transliterate(token) else null
-            if (converted != null) {
-                connection.deleteSurroundingText(token.length, 0)
-                connection.commitText(converted, 1)
-                remember(converted)
+            val completedWord = if (marathiMode) WordEngine.transliterate(token) ?: token else token
+            if (composingTokenActive) {
+                // commitText replaces the active composing span and finalizes it.
+                connection.commitText(completedWord + (separator ?: ""), 1)
             } else {
-                remember(token)
+                connection.deleteSurroundingText(token.length, 0)
+                connection.commitText(completedWord, 1)
+                separator?.let { connection.commitText(it, 1) }
             }
+            remember(completedWord)
+        } else {
+            separator?.let { connection.commitText(it, 1) }
         }
-        separator?.let { connection.commitText(it, 1) }
+        composingTokenActive = false
     }
 
     private fun refreshTopStrip() {
@@ -524,8 +597,15 @@ class LekhoInputMethodService : InputMethodService() {
                     val word = view.tag as? String ?: return@setOnClickListener
                     val connection = currentInputConnection ?: return@setOnClickListener
                     val tokenNow = currentToken()
-                    if (tokenNow.isNotEmpty()) connection.deleteSurroundingText(tokenNow.length, 0)
-                    connection.commitText(word, 1)
+                    if (composingTokenActive) {
+                        // A selected candidate is a completed word: insert its trailing
+                        // space automatically so the user can immediately type the next word.
+                        connection.commitText("$word ", 1)
+                    } else {
+                        if (tokenNow.isNotEmpty()) connection.deleteSurroundingText(tokenNow.length, 0)
+                        connection.commitText("$word ", 1)
+                    }
+                    composingTokenActive = false
                     remember(word)
                     moreToolsMode = false
                     refreshTopStrip()

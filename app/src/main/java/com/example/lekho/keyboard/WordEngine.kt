@@ -274,8 +274,12 @@ object WordEngine {
         "about", "account", "after", "again", "all", "also", "always", "and", "any", "app",
         "are", "available", "because", "before", "business", "can", "change", "check", "come",
         "day", "dear", "details", "do", "document", "done", "each", "email", "english", "every",
-        "fine", "for", "from", "get", "give", "good", "great", "hello", "help", "here", "how",
-        "important", "information", "is", "it", "kindly", "know", "like", "login", "made", "make",
+        "fine", "for", "from", "get", "give", "good", "great", "hello", "hellos", "hellish", "help",
+        "helper", "helpers", "helped", "helpful", "helping", "helps", "helicopter", "health", "healthy",
+        "hearing", "heard", "heaven", "heavy", "here", "how",
+        "important", "info", "inform", "informal", "informally", "informant", "informed", "informer",
+        "informing", "informs", "information", "informational", "informatics", "informative", "is", "it",
+        "kindly", "know", "like", "login", "made", "make",
         "mobile", "more", "my", "name", "need", "new", "not", "now", "of", "office", "on", "one",
         "our", "please", "service", "share", "sir", "some", "support", "thank", "thanks", "that",
         "the", "there", "this", "today", "tomorrow", "update", "use", "verification", "very", "was",
@@ -302,6 +306,7 @@ object WordEngine {
         "wait", "want", "way", "week", "while", "without", "word", "working", "write", "wrong", "yes",
         "yesterday", "young", "zero", "helping", "helped", "healthy", "hearing", "heaven", "heading"
     )
+
 
     // Alternative phonetic readings used to build up to ten Marathi candidates.
     private data class ParseState(val output: String, val pendingConsonant: Boolean)

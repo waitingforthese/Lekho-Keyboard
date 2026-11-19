@@ -1,48 +1,50 @@
-LEKHO KEYBOARD V1.6 — TEN MARATHI / ENGLISH SUGGESTIONS (GITHUB WEBSITE ONLY)
+LEKHO KEYBOARD V1.6.2 — CONTINUOUS SUGGESTIONS + AUTO SPACE
 
-This package builds on the V1.5 Marathi transliteration code. It adds ten candidate suggestions and keeps the existing Gboard-inspired visual keyboard unchanged.
+BASELINE
+- V1.6.1 remains the locked reference baseline and is not modified.
+- V1.6.2 is a follow-on update based on the exact V1.6.1 build-fix source.
+- Existing Gboard-inspired keyboard layout, colors, fonts, key sizes, toolbar, Marathi phonetic engine, history limit/order, Shift/Caps, Enter and hold-Backspace behavior are retained.
 
-WHAT CHANGED
-- Marathi typing can show up to ten distinct Devanagari candidates for a Roman token.
-- For words not found in the Marathi dictionary, the phonetic engine tries alternate sound readings (for example, short/long vowels and common consonant alternatives) to produce different Devanagari candidates.
-- Marathi dictionary results and generated phonetic candidates are combined, deduplicated, and ranked with exact dictionary spelling first.
-- English mode now provides up to ten matching English autocomplete suggestions from its offline English word list.
-- The top suggestion strip contains ten reusable suggestion cells in a horizontal scroller. Swipe left/right on the suggestion strip to view all available candidates; ten options cannot all fit at readable font size on a typical phone width at once.
-- Tapping a candidate replaces the current Roman token with that candidate.
-- The keyboard layout, key shapes, font, colours, modifier keys, toolbar icons, spacebar and Enter behaviour are not intentionally changed.
+CHANGES
+1. Continuous candidates while typing:
+   - Roman letters are entered as one active InputConnection composing span.
+   - Each key updates the complete composing token and refreshes the candidate row.
+   - InputMethodService.onUpdateSelection also refreshes the candidate row when an editor reports selection/composition changes.
+   - This keeps suggestions updating after the first and second letters through the end of the word, rather than relying only on a stale token snapshot.
+2. Candidate selection inserts the selected word followed by one space automatically in both Marathi and English modes.
+3. Backspace edits the composing token one grapheme at a time while composition is active.
+4. Expanded the curated offline English suggestion vocabulary for common longer prefixes.
+5. Updated Android versionName to 1.6.2 and versionCode to 8.
 
-LANGUAGE MODE
-- Marathi mode: the space bar reads “मराठी”. Type Roman letters to see Devanagari candidates.
-- English mode: tap the globe/language key until the space bar reads “English”. Type an English prefix to see up to ten English matches.
+GOOGLE GBOARD PACKAGE CHECK
+- Google Play identifies the Gboard application with package id: com.google.android.inputmethod.latin.
+- Gboard's suggestion / transliteration engine is proprietary; its internal classes and private package interfaces are not a public Android API and must not be treated as a callable library.
+- This implementation therefore uses Android's public InputConnection composing-text interface, the same standard contract available to any Android IME: setComposingText() while a word is being edited, then commitText() to finalize it.
 
-EXAMPLES
-- Marathi: namaskar, rahul, jagtap, patil, mahiti, kavita.
-- English: type a prefix such as “a” to see up to ten matching English words.
-- For Marathi candidates, swipe the top suggestion strip horizontally to reach options 4–10.
+FILES TO REPLACE / ADD
+1. Replace app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
+2. Replace app/src/main/java/com/example/lekho/keyboard/WordEngine.kt
+3. Replace app/src/test/java/com/example/lekho/keyboard/WordEngineTest.kt
+4. Replace app/build.gradle.kts
 
-FILES TO REPLACE / CREATE
-1) Replace: app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
-2) Replace: app/src/main/java/com/example/lekho/keyboard/WordEngine.kt
-3) Replace: app/build.gradle.kts
-4) Create or replace: app/src/test/java/com/example/lekho/keyboard/WordEngineTest.kt
+GITHUB WEBSITE ONLY
+A. Keep V1.6.1 as the saved baseline. Do not overwrite or delete its ZIP/source snapshot.
+B. In the GitHub website, create branch: v1.6.2-continuous-suggestions
+C. Replace the four existing files above using the full contents from this ZIP.
+D. Commit the changes to that branch.
+E. Open a Pull Request with base=main and compare=v1.6.2-continuous-suggestions.
+F. Wait for GitHub Actions to pass both unit tests and assembleDebug before merging or installing.
 
-GITHUB WEBSITE STEPS (NO TERMINAL / GIT BASH / GITHUB DESKTOP)
-A. Open https://github.com/waitingforthese/Lekho-Keyboard
-B. Create a new branch from main named: v1.6-ten-suggestions
-C. In the branch, open each file listed above. For existing files, click Edit, select the entire old file, and paste the complete matching file from this ZIP. For WordEngineTest.kt, use Add file > Create new file if it does not already exist; otherwise edit it.
-D. Commit each file to the v1.6-ten-suggestions branch.
-E. Create a Pull Request with base=main and compare=v1.6-ten-suggestions.
-F. Check GitHub Actions. Merge only after the Android build and unit tests succeed.
+TESTING CHECKLIST AFTER APK INSTALL
+- Marathi mode: type r -> ra -> rah -> rahu -> rahul; candidates should refresh at each keystroke.
+- Marathi mode: type ma -> mah -> maha -> maharashtra; candidates should continue updating through the full token.
+- English mode: type h -> he -> hel -> hell -> hello; candidate list should update at each step.
+- English mode: type i -> in -> inf -> info -> infor -> inform; suggestions should continue beyond the first two letters.
+- Tap any Marathi or English candidate: the word should be inserted with exactly one trailing space; the next word can be typed immediately without pressing Space again.
+- Test Backspace while a Roman word is still being composed, then press Space and Enter.
 
-VERSION
-versionCode = 7
-versionName = "0.7.0"
-
-ACCURACY NOTE
-This is an offline phonetic transliteration engine. Marathi candidates are generated from explicit Roman sound alternatives and a local dictionary; this is not the same as Gboard's cloud / proprietary language model. The engine can provide different plausible spellings, but it cannot guarantee that all ten are linguistically correct for every token. The English suggestion list is also offline and returns fewer than ten when fewer matching words exist in the list.
-
-VALIDATION
-The Kotlin WordEngine was compiled independently and checked for ten distinct Devanagari candidates on an unknown Roman token, ten distinct English candidates for a prefix, and key transliteration cases. The full Android Gradle build has not been run here. Wait for a successful GitHub Actions run before installing the APK.
-
-
-V1.6.1 build correction: In LekhoInputMethodService.kt, HorizontalScrollView.LayoutParams was replaced with android.widget.FrameLayout.LayoutParams. This resolves the GitHub Actions Kotlin compiler error at line 505 (Unresolved reference: LayoutParams). No UI dimensions, colors, key labels, history behavior, or transliteration logic were changed.
+ACCURACY / LIMITATIONS
+- The app uses an offline phonetic Marathi dictionary and sound-variant generator. Ten candidates are shown when the engine has ten distinct results; very short or unambiguous prefixes can naturally have fewer meaningful alternatives.
+- English suggestions are offline and use a curated vocabulary. Uncommon prefixes may return fewer alternatives than Gboard.
+- The package is not a clone of Gboard's private language model. No Gboard APK code or private interface is copied or invoked.
+- Full Android Gradle build must be verified by GitHub Actions after these changes are committed. The Kotlin engine was independently compiled and its offline dictionary loading/prefix outputs were tested locally; the Android service itself has not yet been built in this environment.

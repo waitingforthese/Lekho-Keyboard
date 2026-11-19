@@ -44,6 +44,34 @@ class WordEngineTest {
         assertTrue(options.all { it.all { ch -> ch.isLetter() } })
     }
 
+
+    @Test fun suggestionsKeepUpdatingForEveryLetterUntilWordEnds() {
+        val word = "maharashtra"
+        for (length in 1..word.length) {
+            val prefix = word.take(length)
+            assertTrue("No Marathi candidates for prefix: $prefix", WordEngine.suggestions(prefix, true).isNotEmpty())
+        }
+        val englishWord = "information"
+        for (length in 1..englishWord.length) {
+            val prefix = englishWord.take(length)
+            assertTrue("No English candidates for prefix: $prefix", WordEngine.suggestions(prefix, false).isNotEmpty())
+        }
+    }
+
+
+    @Test fun englishSuggestionsContinueAfterLongerPrefixes() {
+        for (prefix in listOf("i", "in", "inf", "info", "infor", "inform")) {
+            assertTrue("No English suggestions for: $prefix", WordEngine.suggestions(prefix, false).isNotEmpty())
+        }
+    }
+
+
+    @Test fun englishSuggestionsReturnTenOptionsForLongerPrefix() {
+        val options = WordEngine.suggestions("infor", false)
+        assertEquals(10, options.size)
+        assertEquals(10, options.distinct().size)
+    }
+
     @Test fun emptyInputHasNoSuggestionOrTransliteration() {
         assertEquals(null, WordEngine.transliterate(" "))
         assertTrue(WordEngine.suggestions("", true).isEmpty())

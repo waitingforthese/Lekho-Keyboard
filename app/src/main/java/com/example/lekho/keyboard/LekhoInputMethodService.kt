@@ -30,6 +30,7 @@ import java.util.Locale
  */
 class LekhoInputMethodService : InputMethodService() {
     private enum class Layout { LETTERS, NUMBERS, SYMBOLS }
+    private enum class TopStripMode { TOOLBAR, SUGGESTIONS, MORE_TOOLS, EMOJI, HISTORY }
 
     private var marathiMode = true
     private var shiftEnabled = false
@@ -42,6 +43,8 @@ class LekhoInputMethodService : InputMethodService() {
 
     private var root: LinearLayout? = null
     private var suggestionRow: LinearLayout? = null
+    private var activeTopStripMode: TopStripMode? = null
+    private val suggestionCells = mutableListOf<TextView>()
     private val history = mutableListOf<String>()
     private val prefs by lazy { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
@@ -90,6 +93,8 @@ class LekhoInputMethodService : InputMethodService() {
         emojiMode = false
         historyMode = false
         moreToolsMode = false
+        activeTopStripMode = null
+        suggestionCells.clear()
         shiftEnabled = false
         capsLock = false
         renderKeys()
@@ -348,9 +353,10 @@ class LekhoInputMethodService : InputMethodService() {
                         if (token.isNotBlank()) remember(token)
                     }
                 }
-                if (!capsLock) shiftEnabled = false
+                val shiftWasReset = shiftEnabled && !capsLock
+                if (shiftWasReset) shiftEnabled = false
+                if (shiftWasReset) renderKeys()
                 refreshTopStrip()
-                renderKeys()
             }
             ",", "." -> {
                 rememberCurrentToken()
@@ -417,9 +423,10 @@ class LekhoInputMethodService : InputMethodService() {
                 if (!downAccepted && !upAccepted) connection.commitText("\n", 1)
             }
         }
-        if (!capsLock) shiftEnabled = false
+        val shiftWasReset = shiftEnabled && !capsLock
+        if (shiftWasReset) shiftEnabled = false
+        if (shiftWasReset) renderKeys()
         refreshTopStrip()
-        renderKeys()
     }
 
     private fun currentToken(): String {
@@ -434,35 +441,88 @@ class LekhoInputMethodService : InputMethodService() {
 
     private fun refreshTopStrip() {
         val row = suggestionRow ?: return
-        row.removeAllViews()
-        if (isSensitiveField()) return
+        if (isSensitiveField()) {
+            if (row.childCount > 0) row.removeAllViews()
+            suggestionCells.clear()
+            activeTopStripMode = null
+            return
+        }
 
-        when {
-            moreToolsMode -> showMoreTools(row)
-            emojiMode -> showChoices(row, EMOJI_SHORTCUTS, "Emoji") { chosen ->
-                currentInputConnection?.commitText(chosen, 1)
-                refreshTopStrip()
-            }
-            historyMode -> showChoices(row, history.asReversed().take(6), "Recent words") { chosen ->
-                currentInputConnection?.commitText(chosen, 1)
-                refreshTopStrip()
-            }
-            currentToken().isNotBlank() -> {
-                val token = currentToken()
-                val suggestions = WordEngine.suggestions(token, marathiMode).take(3)
-                val visible = if (suggestions.isEmpty()) listOf(token) else suggestions
-                visible.forEach { word ->
-                    addTopItem(row, word, word, weight = 1f) {
-                        val connection = currentInputConnection ?: return@addTopItem
-                        if (token.isNotEmpty()) connection.deleteSurroundingText(token.length, 0)
-                        connection.commitText(word, 1)
-                        remember(word)
-                        moreToolsMode = false
-                        refreshTopStrip()
-                    }
+        // Read the editor token once per refresh. Normal typing updates only the three
+        // existing suggestion TextViews; toolbar/history/emoji views are rebuilt only
+        // when the user changes top-strip mode.
+        val token = currentToken()
+        val mode = when {
+            moreToolsMode -> TopStripMode.MORE_TOOLS
+            emojiMode -> TopStripMode.EMOJI
+            historyMode -> TopStripMode.HISTORY
+            token.isNotBlank() -> TopStripMode.SUGGESTIONS
+            else -> TopStripMode.TOOLBAR
+        }
+
+        if (mode != activeTopStripMode) {
+            row.removeAllViews()
+            suggestionCells.clear()
+            activeTopStripMode = mode
+            when (mode) {
+                TopStripMode.SUGGESTIONS -> createSuggestionCells(row)
+                TopStripMode.TOOLBAR -> showToolbar(row)
+                TopStripMode.MORE_TOOLS -> showMoreTools(row)
+                TopStripMode.EMOJI -> showChoices(row, EMOJI_SHORTCUTS, "Emoji") { chosen ->
+                    currentInputConnection?.commitText(chosen, 1)
+                    refreshTopStrip()
+                }
+                TopStripMode.HISTORY -> showChoices(row, history.asReversed().take(6), "Recent words") { chosen ->
+                    currentInputConnection?.commitText(chosen, 1)
+                    refreshTopStrip()
                 }
             }
-            else -> showToolbar(row)
+        }
+
+        if (mode == TopStripMode.SUGGESTIONS) updateSuggestionCells(token)
+    }
+
+    private fun createSuggestionCells(row: LinearLayout) {
+        repeat(3) {
+            val cell = TextView(this).apply {
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setTextColor(COLOR_TOOL_TEXT)
+                isClickable = true
+                isFocusable = true
+                background = roundedKeyBackground(COLOR_PANEL, COLOR_PANEL, 10)
+                setOnClickListener { view ->
+                    val word = view.tag as? String ?: return@setOnClickListener
+                    val connection = currentInputConnection ?: return@setOnClickListener
+                    val tokenNow = currentToken()
+                    if (tokenNow.isNotEmpty()) connection.deleteSurroundingText(tokenNow.length, 0)
+                    connection.commitText(word, 1)
+                    remember(word)
+                    moreToolsMode = false
+                    refreshTopStrip()
+                }
+            }
+            suggestionCells += cell
+            row.addView(cell, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                setMargins(dp(1), dp(1), dp(1), dp(1))
+            })
+        }
+    }
+
+    private fun updateSuggestionCells(token: String) {
+        val suggestions = WordEngine.suggestions(token, marathiMode).take(3)
+        val visible = if (suggestions.isEmpty()) listOf(token) else suggestions
+        suggestionCells.forEachIndexed { index, cell ->
+            val word = visible.getOrNull(index)
+            if (word == null) {
+                cell.visibility = View.INVISIBLE
+                cell.tag = null
+            } else {
+                cell.visibility = View.VISIBLE
+                cell.text = word
+                cell.tag = word
+                cell.contentDescription = "Insert $word"
+            }
         }
     }
 
@@ -575,9 +635,10 @@ class LekhoInputMethodService : InputMethodService() {
         if (isSensitiveField()) return
         val normalized = text.trim().replace('\n', ' ')
         if (!prefs.getBoolean(KEY_HISTORY_ENABLED, true) || normalized.isBlank() || normalized.length > 120) return
-        history.remove(normalized)
-        history.add(normalized)
-        while (history.size > MAX_HISTORY_ITEMS) history.removeAt(0)
+        // Preserve every committed occurrence in order, including repeated words.
+        val updatedHistory = HistorySequence.append(history, normalized, MAX_HISTORY_ITEMS)
+        history.clear()
+        history.addAll(updatedHistory)
         prefs.edit().putString(KEY_HISTORY, history.joinToString("\n")).apply()
     }
 

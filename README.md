@@ -1,32 +1,26 @@
-# Lekho Keyboard — Version 1 Core
+# Lekho Keyboard — Version 1.2
 
-An Android Input Method Editor (IME) starter built with Kotlin. The product name is provisional and can be changed before release.
+Kotlin Android Input Method Editor (IME), using the user's screenshots as the UI reference. This is a Gboard-inspired layout, not Google's Gboard software or branding.
 
-## Version 1 scope
+## V1.2 changes
+- Gboard-inspired light lavender/pale grey keyboard panel, white rounded keys, subtle borders, active Shift tint and larger Space key.
+- Always-visible numeric row in letter mode.
+- Full QWERTY rows with centered home row.
+- Double-tap Shift enables Caps Lock; single Shift uppercases the next letter; key labels visibly switch to uppercase while active.
+- Backspace tap deletes one Unicode grapheme cluster; holding it repeats deletion until release.
+- Enter dispatches an editor action for Send/Search/Done fields, sends Enter key events as fallback, and commits a newline for multiline editors.
+- Toolbar controls: More/History, Settings, Marathi-English switch, Clipboard paste and recent typing history.
+- Emoji shortcut row in the suggestion strip.
+- Local history stores up to 100 committed words only, can be turned off or cleared in the app, and skips password/private-learning fields.
+- System navigation bar is tinted to match the keyboard and a bottom spacer keeps the final key row above navigation controls.
+- Adds `yashsvi` / `yashasvi` / `yashaswi` → `यशस्वी` starter dictionary entries.
 
-- Android `InputMethodService` with a QWERTY letter layout.
-- Number and symbol layouts, Shift, Backspace, Space and Enter.
-- English mode with a small local English prefix list.
-- Marathi phonetic mode using an offline starter dictionary: type Roman letters, then tap a Devanagari suggestion or press Space for a supported exact word.
-- Three-item suggestion row.
-- Clipboard paste shortcut, read only after the user taps the clipboard shortcut.
-- Optional local typing history, up to 30 committed words, with in-app enable/disable and clear controls.
-- Password and editors that set `IME_FLAG_NO_PERSONALIZED_LEARNING` are excluded from suggestions, clipboard shortcut and local history.
-- No `INTERNET` permission and no server-side text processing.
-
-## Current limitations
-
-The Marathi word list is intentionally small. This build is **not** a full rule-based Marathi transliteration engine and does not yet provide a complete Marathi dictionary, ML next-word prediction, swipe typing, voice typing, emoji panel, themes or personal-dictionary management. Backspace deletes a Unicode grapheme cluster where Android's ICU boundary iterator supports it, but must still be tested on multiple keyboards and editor types.
-
-This is a development build. Do not use it for sensitive production workflows until it has been tested on real devices and its privacy behavior has been reviewed.
-
-## Build requirements
-
-- Android Studio with Android SDK Platform 35 installed.
-- JDK 17.
-- Gradle 8.9.
-
-Open this folder in Android Studio, sync Gradle, and run the `app` configuration. Command line build:
+## Build
+- JDK 17
+- Gradle 8.9
+- Android Gradle Plugin 8.7.3
+- Kotlin 2.0.21
+- Android SDK Platform 35
 
 ```bash
 gradle --no-daemon testDebugUnitTest assembleDebug
@@ -35,26 +29,27 @@ gradle --no-daemon testDebugUnitTest assembleDebug
 APK output: `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## GitHub Actions
+Push this project to the `main` branch. The workflow at `.github/workflows/main.yml` runs unit tests and builds a debug APK artifact. You may also run it manually using Actions → Android APK Build → Run workflow.
 
-The workflow at `.github/workflows/android.yml` runs unit tests and builds a debug APK on pushes and pull requests to `main`, and on manual workflow dispatch. From a successful run, download the `lekho-keyboard-v1-debug-apk` artifact. A separate test report artifact is uploaded even when tests fail.
+## Install and test
+1. Install the debug APK.
+2. Open Lekho Keyboard → Enable keyboard → choose Lekho Keyboard.
+3. Test in a multiline note editor (Enter should add a new line).
+4. Test in a messaging field (Enter should invoke that editor's Send action if it exposes one).
+5. Tap Shift once and verify next letter uppercase; double-tap Shift and verify Caps Lock keeps all letter labels uppercase.
+6. Hold Backspace and verify repeated deletion; include Marathi vowel marks and emoji in tests.
+7. Type words, press Space or Enter, open Settings → Recent typed words and verify saved entries. Password fields must not be recorded.
+8. Check the final key row stays above the device navigation buttons/gesture area on the target phone.
 
-## Install and enable
+## Important limitations
+- The Marathi engine is still dictionary-backed, not a complete general-purpose phonetic transliteration engine. Unlisted spellings may not convert.
+- Voice typing and actual cloud translation are not included. The top toolbar focuses on implemented local actions.
+- Enter behavior varies by app/editor. Both editor-action and key-event/newline routes are implemented, but device/app testing is still required.
+- Navigation inset behavior differs by manufacturer and gesture/button navigation mode; test on the target phone before release.
+- This is a development build, not a release-signed Play Store APK.
 
-1. Install the debug APK on an Android device.
-2. Open Lekho Keyboard and choose **Enable keyboard**.
-3. In Android's On-screen keyboard settings, enable Lekho Keyboard.
-4. Return to the app and choose **Choose Lekho Keyboard**.
-5. Test in a basic text field, then test Marathi and English mode, number/symbol rows, backspace and enter.
+## Privacy
+No INTERNET permission is declared. Only committed words are saved locally (not full messages). History is capped at 100 words, can be disabled or cleared, and is suppressed for password/private-learning fields. Clipboard text is read only after the user taps Paste.
 
-Settings labels vary by Android manufacturer.
-
-## Privacy notes
-
-- No network permission is requested.
-- Clipboard content is read only after a direct tap on the clipboard shortcut; password and no-personalized-learning fields block this shortcut.
-- Typing history is stored in app-private preferences, can be disabled or cleared, and is limited to 30 items.
-- Password and `IME_FLAG_NO_PERSONALIZED_LEARNING` fields are excluded from dictionary suggestions and history.
-
-## Package identity
-
-Current development application ID: `com.example.lekho.keyboard`. Choose the final brand and reverse-domain application ID before the first Play Store release; changing the application ID later creates a separate Android app identity.
+## Application ID
+`com.example.lekho.keyboard` — choose the final reverse-domain application ID before first public release.

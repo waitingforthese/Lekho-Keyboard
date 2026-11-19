@@ -14,15 +14,17 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
-    
-compileOptions {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-}
+    }
 
-kotlinOptions {
-    jvmTarget = "17"
-}
+    // Java and Kotlin must target the same JVM bytecode level.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 
     testOptions {
         unitTests.isReturnDefaultValues = true

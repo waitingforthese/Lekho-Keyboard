@@ -7,9 +7,14 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.icu.text.BreakIterator
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.text.InputType
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -28,18 +33,39 @@ class LekhoInputMethodService : InputMethodService() {
     private val history = mutableListOf<String>()
     private val prefs by lazy { getSharedPreferences("lekho_local", Context.MODE_PRIVATE) }
 
+    // Backspace repeat: tap deletes one grapheme; holding repeats until the finger is lifted.
+    private val backspaceHandler = Handler(Looper.getMainLooper())
+    private var backspaceHeld = false
+    private var backspaceRepeated = false
+    private var backspaceCancelled = false
+    private var backspaceStartedAt = 0L
+    private val repeatBackspace = object : Runnable {
+        override fun run() {
+            if (!backspaceHeld || backspaceCancelled) return
+            backspaceRepeated = true
+            deleteOneCharacter(refreshAfterDelete = false)
+            val heldFor = SystemClock.uptimeMillis() - backspaceStartedAt
+            val repeatDelay = if (heldFor >= 1_000L) 22L else 48L
+            backspaceHandler.postDelayed(this, repeatDelay)
+        }
+    }
+
     override fun onCreateInputView(): View {
         loadHistory()
+        applyNavigationBarStyle()
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(5), dp(4), dp(5))
-            setBackgroundColor(Color.rgb(225, 232, 239))
+            setPadding(dp(4), dp(5), dp(4), 0)
+            setBackgroundColor(KEYBOARD_BACKGROUND)
+            clipToPadding = false
+            clipChildren = false
         }
         suggestionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            setPadding(dp(2), 0, dp(2), 0)
         }
-        root!!.addView(suggestionRow, LinearLayout.LayoutParams(-1, dp(42)))
+        root!!.addView(suggestionRow, LinearLayout.LayoutParams(-1, dp(44)))
         renderKeys()
         refreshSuggestions()
         return root!!
@@ -47,14 +73,45 @@ class LekhoInputMethodService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        applyNavigationBarStyle()
         loadHistory()
         renderKeys()
         refreshSuggestions()
     }
 
+    override fun onFinishInputView(finishingInput: Boolean) {
+        stopBackspaceRepeat(refresh = false)
+        super.onFinishInputView(finishingInput)
+    }
+
+    override fun onDestroy() {
+        stopBackspaceRepeat(refresh = false)
+        super.onDestroy()
+    }
+
+    private fun applyNavigationBarStyle() {
+        val imeWindow = window?.window ?: return
+        imeWindow.navigationBarColor = KEYBOARD_BACKGROUND
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            imeWindow.isNavigationBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val decor = imeWindow.decorView
+            decor.systemUiVisibility = decor.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
+    }
+
+    /** Reserve the device's navigation-bar height so the bottom key row never sits under it. */
+    private fun navigationBarSpacerHeight(): Int {
+        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        val measured = if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
+        return measured.coerceIn(dp(18), dp(52))
+    }
+
     private fun renderKeys() {
         val container = root ?: return
         while (container.childCount > 1) container.removeViewAt(1)
+
         val rows = when (layout) {
             Layout.LETTERS -> listOf(
                 listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p"),
@@ -76,55 +133,132 @@ class LekhoInputMethodService : InputMethodService() {
             )
         }
         rows.forEach(::addRow)
+
+        // Keep system navigation controls in their own bottom strip, below all keys.
+        container.addView(View(this).apply {
+            setBackgroundColor(KEYBOARD_BACKGROUND)
+            isFocusable = false
+            isClickable = false
+        }, LinearLayout.LayoutParams(-1, navigationBarSpacerHeight()))
     }
 
     private fun addRow(keys: List<String>) {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            clipChildren = false
+            clipToPadding = false
         }
         keys.forEach { key ->
             val special = key in setOf("⇧", "⌫", "?123", "123", "ABC", "🌐", "↵", "=\\<")
             val button = Button(this).apply {
                 text = when {
                     key == "space" -> if (marathiMode) "मराठी" else "English"
-                    key == "=\\<" -> "\\<="
+                    key == "=\\<" -> "<="
                     shift && layout == Layout.LETTERS && key.length == 1 && key[0].isLetter() -> key.uppercase(Locale.ROOT)
                     else -> key
                 }
-                textSize = if (key == "space") 11f else 16f
+                textSize = when {
+                    key == "space" -> 12f
+                    key.length == 1 && key[0].isLetter() -> 20f
+                    else -> 16f
+                }
                 isAllCaps = false
                 gravity = Gravity.CENTER
-                setTextColor(Color.rgb(25, 42, 58))
+                setTextColor(KEY_TEXT)
                 typeface = Typeface.DEFAULT
                 setPadding(0, 0, 0, 0)
                 minWidth = 0
                 minHeight = 0
+                minimumWidth = 0
                 minimumHeight = 0
+                stateListAnimator = null
+                elevation = dp(1).toFloat()
                 background = GradientDrawable().apply {
-                    setColor(if (special || key == "space") Color.rgb(193, 211, 225) else Color.WHITE)
-                    cornerRadius = dp(7).toFloat()
+                    val fill = if (special || key == "space") KEY_SPECIAL else Color.WHITE
+                    setColor(fill)
+                    cornerRadius = dp(8).toFloat()
+                    setStroke(dp(1), if (special) KEY_SPECIAL_STROKE else KEY_BORDER)
                 }
                 contentDescription = when (key) {
-                    "⌫" -> "Backspace"
+                    "⌫" -> "Backspace. Tap to delete one character, hold to keep deleting"
                     "↵" -> "Enter"
                     "🌐" -> "Switch language"
                     "⇧" -> "Shift"
-                    "space" -> if (marathiMode) "Marathi phonetic mode" else "English mode"
+                    "space" -> if (marathiMode) "Space, Marathi phonetic mode" else "Space, English mode"
                     else -> key
                 }
-                setOnClickListener { onKey(key) }
+                if (key == "⌫") {
+                    setOnClickListener { onKey(key) }
+                    setOnTouchListener { view, event -> handleBackspaceTouch(view, event) }
+                } else {
+                    setOnClickListener {
+                        it.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                        onKey(key)
+                    }
+                }
             }
             val weight = when (key) {
-                "space" -> 4.2f
-                "?123", "123", "ABC", "🌐", "⇧", "⌫", "↵", "=\\<" -> 1.35f
+                "space" -> 4.15f
+                "?123", "123", "ABC" -> 1.45f
+                "🌐", "⇧", "⌫", "↵", "=\\<" -> 1.35f
                 else -> 1f
             }
-            row.addView(button, LinearLayout.LayoutParams(0, dp(46), weight).apply {
-                setMargins(dp(2), dp(2), dp(2), dp(2))
+            row.addView(button, LinearLayout.LayoutParams(0, dp(45), weight).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(3))
             })
         }
         root?.addView(row, LinearLayout.LayoutParams(-1, dp(50)))
+    }
+
+    private fun handleBackspaceTouch(view: View, event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                backspaceHeld = true
+                backspaceRepeated = false
+                backspaceCancelled = false
+                backspaceStartedAt = SystemClock.uptimeMillis()
+                view.isPressed = true
+                backspaceHandler.removeCallbacks(repeatBackspace)
+                backspaceHandler.postDelayed(repeatBackspace, 380L)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val inside = event.x >= 0 && event.x < view.width && event.y >= 0 && event.y < view.height
+                if (!inside && backspaceHeld) {
+                    backspaceCancelled = true
+                    backspaceHeld = false
+                    backspaceHandler.removeCallbacks(repeatBackspace)
+                    view.isPressed = false
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                val shouldClick = backspaceHeld && !backspaceRepeated && !backspaceCancelled
+                view.isPressed = false
+                backspaceHeld = false
+                backspaceHandler.removeCallbacks(repeatBackspace)
+                if (shouldClick) view.performClick() else if (backspaceRepeated) refreshSuggestions()
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                view.isPressed = false
+                backspaceHeld = false
+                backspaceCancelled = true
+                backspaceHandler.removeCallbacks(repeatBackspace)
+                if (backspaceRepeated) refreshSuggestions()
+                return true
+            }
+        }
+        return true
+    }
+
+    private fun stopBackspaceRepeat(refresh: Boolean) {
+        backspaceHeld = false
+        backspaceHandler.removeCallbacks(repeatBackspace)
+        if (refresh && backspaceRepeated) refreshSuggestions()
+        backspaceRepeated = false
+        backspaceCancelled = false
     }
 
     private fun onKey(key: String) {
@@ -172,24 +306,24 @@ class LekhoInputMethodService : InputMethodService() {
         }
     }
 
-    private fun deleteOneCharacter() {
+    private fun deleteOneCharacter(refreshAfterDelete: Boolean = true) {
         val connection = currentInputConnection ?: return
         val selected = connection.getSelectedText(0)
         if (!selected.isNullOrEmpty()) {
             connection.commitText("", 1)
-            refreshSuggestions()
+            if (refreshAfterDelete) refreshSuggestions()
             return
         }
-        val before = connection.getTextBeforeCursor(24, 0)?.toString().orEmpty()
+        val before = connection.getTextBeforeCursor(32, 0)?.toString().orEmpty()
         if (before.isEmpty()) return
 
-        // Delete one Unicode grapheme cluster (e.g. a Devanagari letter plus its matra).
+        // Delete one Unicode grapheme cluster (for example a Devanagari consonant + matra).
         val iterator = BreakIterator.getCharacterInstance(Locale.getDefault())
         iterator.setText(before)
         val boundary = iterator.preceding(before.length)
         val deleteLength = if (boundary == BreakIterator.DONE) 1 else before.length - boundary
         connection.deleteSurroundingText(deleteLength, 0)
-        refreshSuggestions()
+        if (refreshAfterDelete) refreshSuggestions()
     }
 
     private fun performEnter() {
@@ -220,9 +354,9 @@ class LekhoInputMethodService : InputMethodService() {
         (suggestions.ifEmpty { fallback }).take(3).forEach { word ->
             val item = TextView(this).apply {
                 text = word
-                textSize = 14f
+                textSize = 15f
                 gravity = Gravity.CENTER
-                setTextColor(Color.rgb(20, 48, 66))
+                setTextColor(KEY_TEXT)
                 contentDescription = when (word) {
                     "📋" -> "Paste clipboard"
                     "↕" -> "Paste most recent saved word"
@@ -233,9 +367,9 @@ class LekhoInputMethodService : InputMethodService() {
                         "📋" -> pasteClipboard()
                         "↕" -> pasteLastHistory()
                         else -> {
-                            val activeConnection = currentInputConnection ?: return@setOnClickListener
-                            if (token.isNotEmpty()) activeConnection.deleteSurroundingText(token.length, 0)
-                            activeConnection.commitText(word, 1)
+                            val connection = currentInputConnection ?: return@setOnClickListener
+                            if (token.isNotEmpty()) connection.deleteSurroundingText(token.length, 0)
+                            connection.commitText(word, 1)
                             remember(word)
                             refreshSuggestions()
                         }
@@ -295,4 +429,12 @@ class LekhoInputMethodService : InputMethodService() {
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+
+    companion object {
+        private val KEYBOARD_BACKGROUND = Color.rgb(220, 231, 242)
+        private val KEY_SPECIAL = Color.rgb(190, 213, 229)
+        private val KEY_SPECIAL_STROKE = Color.rgb(174, 199, 217)
+        private val KEY_BORDER = Color.rgb(226, 232, 238)
+        private val KEY_TEXT = Color.rgb(36, 55, 70)
+    }
 }

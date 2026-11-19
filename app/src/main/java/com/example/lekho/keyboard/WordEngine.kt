@@ -279,46 +279,117 @@ object WordEngine {
         "mobile", "more", "my", "name", "need", "new", "not", "now", "of", "office", "on", "one",
         "our", "please", "service", "share", "sir", "some", "support", "thank", "thanks", "that",
         "the", "there", "this", "today", "tomorrow", "update", "use", "verification", "very", "was",
-        "we", "welcome", "what", "when", "where", "which", "with", "work", "you", "your"
+        "we", "welcome", "what", "when", "where", "which", "with", "work", "you", "your",
+        "able", "accept", "access", "add", "address", "admin", "advance", "advice", "agree", "allow",
+        "almost", "along", "already", "answer", "anyone", "anything", "apply", "april", "area", "around",
+        "back", "balance", "banking", "basic", "better", "between", "book", "both", "bring", "build",
+        "call", "called", "calling", "care", "case", "cash", "certain", "clear", "client", "close",
+        "code", "come", "coming", "complete", "correct", "customer", "data", "date", "debit", "december",
+        "design", "different", "digital", "direct", "download", "early", "easy", "education", "end", "enough",
+        "error", "even", "example", "experience", "extra", "family", "fast", "feel", "file", "final",
+        "first", "follow", "form", "found", "free", "full", "future", "general", "going", "greatest",
+        "group", "half", "happy", "hard", "have", "having", "head", "hear", "heard", "helpful",
+        "high", "home", "hope", "hour", "idea", "image", "immediately", "include", "interest", "issue",
+        "job", "just", "keep", "key", "large", "last", "later", "learn", "left", "less", "letter",
+        "life", "link", "list", "long", "looking", "love", "main", "manage", "manager", "many",
+        "message", "minute", "month", "morning", "much", "must", "never", "next", "number", "often",
+        "online", "open", "option", "other", "payment", "people", "phone", "place", "plan", "price",
+        "process", "provide", "quick", "read", "ready", "receive", "recent", "regular", "related", "reply",
+        "report", "request", "required", "right", "same", "save", "school", "second", "select", "send",
+        "simple", "since", "small", "start", "statement", "status", "still", "sure", "system", "take",
+        "team", "tell", "text", "time", "together", "total", "transaction", "try", "type", "under",
+        "understand", "until", "upload", "user", "valid", "value", "verify", "version", "video", "view",
+        "wait", "want", "way", "week", "while", "without", "word", "working", "write", "wrong", "yes",
+        "yesterday", "young", "zero", "helping", "helped", "healthy", "hearing", "heaven", "heading"
     )
 
-    // Longest matches must be tried first (e.g. "ksh" before "k").
-    private val vowels = listOf(
-        "aa" to Pair("आ", "ा"),
-        "ai" to Pair("ऐ", "ै"),
-        "au" to Pair("औ", "ौ"),
-        "ee" to Pair("ई", "ी"),
-        "ii" to Pair("ई", "ी"),
-        "oo" to Pair("ऊ", "ू"),
-        "uu" to Pair("ऊ", "ू"),
-        "ri" to Pair("ऋ", "ृ"),
-        "i" to Pair("इ", "ि"),
-        "u" to Pair("उ", "ु"),
-        "e" to Pair("ए", "े"),
-        "o" to Pair("ओ", "ो"),
-        "a" to Pair("अ", "ा")
+    // Alternative phonetic readings used to build up to ten Marathi candidates.
+    private data class ParseState(val output: String, val pendingConsonant: Boolean)
+    private data class RomanPattern(
+        val roman: String,
+        val consonantChoices: List<String>? = null,
+        val vowelChoices: List<Pair<String, String>>? = null // independent vowel to matra
     )
 
-    private val consonants = listOf(
-        "chh" to "छ", "ksh" to "क्ष", "dny" to "ज्ञ", "jny" to "ज्ञ", "shr" to "श्र",
-        "kh" to "ख", "gh" to "घ", "ch" to "च", "jh" to "झ", "th" to "थ", "dh" to "ध",
-        "ph" to "फ", "bh" to "भ", "sh" to "श", "ny" to "ञ", "tr" to "त्र",
-        "ṭh" to "ठ", "ḍh" to "ढ", "ṭ" to "ट", "ḍ" to "ड", "ṇ" to "ण", "ḷ" to "ळ",
-        "k" to "क", "g" to "ग", "c" to "च", "j" to "ज", "T" to "ट", "D" to "ड",
-        "t" to "त", "d" to "द", "n" to "न", "p" to "प", "b" to "ब", "m" to "म",
-        "y" to "य", "r" to "र", "l" to "ल", "v" to "व", "w" to "व", "s" to "स",
-        "h" to "ह", "f" to "फ", "q" to "क", "x" to "क्ष", "z" to "ज़"
-    ).sortedByDescending { it.first.length }
+    private val vowelPatterns = listOf(
+        RomanPattern("aa", vowelChoices = listOf("आ" to "ा")),
+        RomanPattern("ai", vowelChoices = listOf("ऐ" to "ै")),
+        RomanPattern("au", vowelChoices = listOf("औ" to "ौ")),
+        RomanPattern("ee", vowelChoices = listOf("ई" to "ी")),
+        RomanPattern("ii", vowelChoices = listOf("ई" to "ी", "इ" to "ि")),
+        RomanPattern("oo", vowelChoices = listOf("ऊ" to "ू")),
+        RomanPattern("uu", vowelChoices = listOf("ऊ" to "ू", "उ" to "ु")),
+        RomanPattern("ri", vowelChoices = listOf("ऋ" to "ृ")),
+        RomanPattern("i", vowelChoices = listOf("इ" to "ि", "ई" to "ी")),
+        RomanPattern("u", vowelChoices = listOf("उ" to "ु", "ऊ" to "ू")),
+        RomanPattern("e", vowelChoices = listOf("ए" to "े", "ऐ" to "ै")),
+        RomanPattern("o", vowelChoices = listOf("ओ" to "ो", "औ" to "ौ")),
+        RomanPattern("a", vowelChoices = listOf("अ" to "", "आ" to "ा"))
+    )
 
-    /** Returns a Marathi candidate for any supported Roman-letter token. */
+    private val consonantPatterns = listOf(
+        RomanPattern("chh", consonantChoices = listOf("छ")),
+        RomanPattern("ksh", consonantChoices = listOf("क्ष")),
+        RomanPattern("dny", consonantChoices = listOf("ज्ञ")),
+        RomanPattern("jny", consonantChoices = listOf("ज्ञ")),
+        RomanPattern("shr", consonantChoices = listOf("श्र")),
+        RomanPattern("sh", consonantChoices = listOf("श", "ष")),
+        RomanPattern("ch", consonantChoices = listOf("च", "छ")),
+        RomanPattern("kh", consonantChoices = listOf("ख", "क")),
+        RomanPattern("gh", consonantChoices = listOf("घ", "ग")),
+        RomanPattern("jh", consonantChoices = listOf("झ", "ज")),
+        RomanPattern("th", consonantChoices = listOf("थ", "ठ", "त")),
+        RomanPattern("dh", consonantChoices = listOf("ध", "ढ", "द")),
+        RomanPattern("ph", consonantChoices = listOf("फ")),
+        RomanPattern("bh", consonantChoices = listOf("भ")),
+        RomanPattern("ng", consonantChoices = listOf("ङ्ग", "ंग")),
+        RomanPattern("ny", consonantChoices = listOf("ञ", "न्य")),
+        RomanPattern("tr", consonantChoices = listOf("त्र")),
+        RomanPattern("ṭh", consonantChoices = listOf("ठ")),
+        RomanPattern("ḍh", consonantChoices = listOf("ढ")),
+        RomanPattern("ṭ", consonantChoices = listOf("ट")),
+        RomanPattern("ḍ", consonantChoices = listOf("ड")),
+        RomanPattern("ṇ", consonantChoices = listOf("ण")),
+        RomanPattern("ḷ", consonantChoices = listOf("ळ")),
+        RomanPattern("k", consonantChoices = listOf("क")),
+        RomanPattern("g", consonantChoices = listOf("ग")),
+        RomanPattern("c", consonantChoices = listOf("च", "क")),
+        RomanPattern("j", consonantChoices = listOf("ज", "ज्ञ")),
+        RomanPattern("t", consonantChoices = listOf("त", "ट")),
+        RomanPattern("d", consonantChoices = listOf("द", "ड")),
+        RomanPattern("n", consonantChoices = listOf("न", "ण")),
+        RomanPattern("p", consonantChoices = listOf("प")),
+        RomanPattern("b", consonantChoices = listOf("ब")),
+        RomanPattern("m", consonantChoices = listOf("म")),
+        RomanPattern("y", consonantChoices = listOf("य")),
+        RomanPattern("r", consonantChoices = listOf("र", "ऱ")),
+        RomanPattern("l", consonantChoices = listOf("ल", "ळ")),
+        RomanPattern("v", consonantChoices = listOf("व", "व्ह")),
+        RomanPattern("w", consonantChoices = listOf("व", "व्ह")),
+        RomanPattern("s", consonantChoices = listOf("स", "श")),
+        RomanPattern("h", consonantChoices = listOf("ह")),
+        RomanPattern("f", consonantChoices = listOf("फ", "फ़")),
+        RomanPattern("q", consonantChoices = listOf("क", "क़")),
+        RomanPattern("x", consonantChoices = listOf("क्ष")),
+        RomanPattern("z", consonantChoices = listOf("ज़", "ज"))
+    ).sortedByDescending { it.roman.length }
+
+    private val allPatterns = (vowelPatterns + consonantPatterns)
+        .sortedByDescending { it.roman.length }
+
+    /** Returns the best Marathi form. Exact dictionary spellings always take priority. */
     fun transliterate(token: String): String? {
         val key = token.trim().lowercase(Locale.ROOT)
         if (key.isEmpty()) return null
         marathiWords[key]?.let { return it }
-        return phoneticFallback(key)
+        return phoneticCandidates(key, 1).firstOrNull()
     }
 
-    /** Returns up to three suggestions for the keyboard's suggestion strip. */
+    /**
+     * Returns up to ten candidates in the selected language.
+     * Marathi mode combines dictionary matches with alternative phonetic parses for unknown words.
+     * English mode returns actual English dictionary words beginning with the typed prefix.
+     */
     fun suggestions(token: String, marathiMode: Boolean): List<String> {
         val key = token.trim().lowercase(Locale.ROOT)
         if (key.isBlank()) return emptyList()
@@ -328,63 +399,68 @@ object WordEngine {
                 if (key in englishWords) add(token)
                 englishWords.asSequence()
                     .filter { it.startsWith(key) && it != key }
-                    .take(5)
                     .forEach(::add)
                 if (isEmpty()) add(token)
-            }.distinct().take(3)
+            }.distinct().take(10)
         }
 
-        return buildList {
-            marathiWords[key]?.let(::add)
-            marathiWords.entries.asSequence()
-                .filter { it.key.startsWith(key) && it.key != key }
-                .take(10)
-                .map { it.value }
-                .forEach(::add)
-            transliterate(key)?.let(::add)
-            add(token)
-        }.distinct().take(3)
+        val results = linkedSetOf<String>()
+        marathiWords[key]?.let(results::add)
+        marathiWords.entries.asSequence()
+            .filter { it.key.startsWith(key) && it.key != key }
+            .take(24)
+            .map { it.value }
+            .forEach(results::add)
+        phoneticCandidates(key, 32).forEach(results::add)
+        if (results.isEmpty()) results.add(token)
+        return results.take(10)
     }
 
-    private fun phoneticFallback(input: String): String? {
-        val output = StringBuilder()
-        var index = 0
+    /** Generate ordered phonetic candidates using a bounded beam over ambiguous Roman sounds. */
+    private fun phoneticCandidates(input: String, limit: Int): List<String> {
+        if (input.isBlank() || input.any { !it.isLetter() }) return emptyList()
+        val states = Array(input.length + 1) { mutableListOf<ParseState>() }
+        states[0].add(ParseState("", false))
+        val perPositionLimit = 96
 
-        while (index < input.length) {
-            val vowel = vowels.firstOrNull { (roman, _) -> input.startsWith(roman, index) }
-            if (vowel != null) {
-                output.append(vowel.second.first)
-                index += vowel.first.length
-                continue
-            }
+        for (index in input.indices) {
+            if (states[index].isEmpty()) continue
+            val matches = allPatterns.filter { input.startsWith(it.roman, index) }
+            if (matches.isEmpty()) return emptyList()
 
-            val consonant = consonants.firstOrNull { (roman, _) -> input.startsWith(roman, index) }
-                ?: return null
-            val roman = consonant.first
-            val devanagari = consonant.second
-            val afterConsonant = index + roman.length
-            val followingVowel = vowels.firstOrNull { (vowelRoman, _) ->
-                input.startsWith(vowelRoman, afterConsonant)
-            }
-
-            if (followingVowel != null) {
-                val vowelEnd = afterConsonant + followingVowel.first.length
-                output.append(devanagari)
-                when {
-                    followingVowel.first == "a" && vowelEnd == input.length -> output.append("ा")
-                    followingVowel.first == "a" -> Unit // inherent short अ on this consonant
-                    else -> output.append(followingVowel.second.second)
+            for (state in states[index]) {
+                for (pattern in matches) {
+                    val end = index + pattern.roman.length
+                    if (pattern.vowelChoices != null) {
+                        val choices = if (pattern.roman == "a" && state.pendingConsonant && end == input.length) {
+                            pattern.vowelChoices.sortedByDescending { it.second.length }
+                        } else pattern.vowelChoices
+                        for ((independent, matra) in choices) {
+                            val addition = if (state.pendingConsonant) matra else independent
+                            val candidate = ParseState(state.output + addition, false)
+                            if (states[end].size < perPositionLimit && candidate !in states[end]) {
+                                states[end].add(candidate)
+                            }
+                        }
+                    } else {
+                        for (sound in pattern.consonantChoices.orEmpty()) {
+                            val prefix = if (state.pendingConsonant) "्" else ""
+                            val candidate = ParseState(state.output + prefix + sound, true)
+                            if (states[end].size < perPositionLimit && candidate !in states[end]) {
+                                states[end].add(candidate)
+                            }
+                        }
+                    }
                 }
-                index = vowelEnd
-            } else {
-                output.append(devanagari)
-                val nextIsConsonant = afterConsonant < input.length &&
-                    consonants.any { (nextRoman, _) -> input.startsWith(nextRoman, afterConsonant) }
-                if (nextIsConsonant) output.append('्')
-                index = afterConsonant
             }
         }
 
-        return output.toString().ifBlank { null }
+        return states[input.length].asSequence()
+            .map { it.output }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(limit)
+            .toList()
     }
+
 }

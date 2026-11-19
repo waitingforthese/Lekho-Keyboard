@@ -20,12 +20,13 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.Locale
 
 /**
- * Lekho Keyboard V1.5 — Gboard-inspired layout with Marathi phonetic transliteration.
+ * Lekho Keyboard V1.6 — Gboard-style layout with ten language suggestions.
  * This service intentionally stores committed words only (not full messages).
  */
 class LekhoInputMethodService : InputMethodService() {
@@ -457,8 +458,8 @@ class LekhoInputMethodService : InputMethodService() {
             return
         }
 
-        // Read the editor token once per refresh. Normal typing updates only the three
-        // existing suggestion TextViews; toolbar/history/emoji views are rebuilt only
+        // Read the editor token once per refresh. Normal typing updates ten reusable
+        // suggestion TextViews inside a horizontal scroller; toolbar/history/emoji views are rebuilt only
         // when the user changes top-strip mode.
         val token = currentToken()
         val mode = when {
@@ -492,13 +493,32 @@ class LekhoInputMethodService : InputMethodService() {
     }
 
     private fun createSuggestionCells(row: LinearLayout) {
-        repeat(3) {
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val choices = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        scroll.addView(choices, HorizontalScrollView.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.MATCH_PARENT
+        ))
+        row.addView(scroll, LinearLayout.LayoutParams(-1, -1))
+
+        repeat(10) {
             val cell = TextView(this).apply {
-                textSize = 15f
+                textSize = 14f
                 gravity = Gravity.CENTER
                 setTextColor(COLOR_TOOL_TEXT)
                 isClickable = true
                 isFocusable = true
+                isSingleLine = true
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                minWidth = dp(58)
+                setPadding(dp(8), 0, dp(8), 0)
                 background = roundedKeyBackground(COLOR_PANEL, COLOR_PANEL, 10)
                 setOnClickListener { view ->
                     val word = view.tag as? String ?: return@setOnClickListener
@@ -512,19 +532,22 @@ class LekhoInputMethodService : InputMethodService() {
                 }
             }
             suggestionCells += cell
-            row.addView(cell, LinearLayout.LayoutParams(0, -1, 1f).apply {
+            choices.addView(cell, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            ).apply {
                 setMargins(dp(1), dp(1), dp(1), dp(1))
             })
         }
     }
 
     private fun updateSuggestionCells(token: String) {
-        val suggestions = WordEngine.suggestions(token, marathiMode).take(3)
+        val suggestions = WordEngine.suggestions(token, marathiMode).take(10)
         val visible = if (suggestions.isEmpty()) listOf(token) else suggestions
         suggestionCells.forEachIndexed { index, cell ->
             val word = visible.getOrNull(index)
             if (word == null) {
-                cell.visibility = View.INVISIBLE
+                cell.visibility = View.GONE
                 cell.tag = null
             } else {
                 cell.visibility = View.VISIBLE

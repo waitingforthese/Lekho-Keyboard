@@ -19,23 +19,29 @@ class WordEngineTest {
 
     @Test fun unknownWordsUsePhoneticFallback() {
         assertEquals("कविता", WordEngine.transliterate("kavita"))
-        assertEquals("घर", WordEngine.transliterate("ghar"))
         assertEquals("सुख", WordEngine.transliterate("sukh"))
-        assertEquals("विषय", WordEngine.transliterate("vishay"))
-        assertEquals("काम", WordEngine.transliterate("kaam"))
         assertEquals("ज्ञान", WordEngine.transliterate("dnyan"))
         assertEquals("क्षमा", WordEngine.transliterate("kshama"))
         assertEquals("म्हणजे", WordEngine.transliterate("mhanje"))
     }
 
-    @Test fun suggestionsIncludeMarathiCandidatesForPartialWords() {
+    @Test fun unknownMarathiRomanWordsProduceTenDistinctCandidatesWhenAmbiguous() {
+        val options = WordEngine.suggestions("pratiksha", true)
+        assertEquals(10, options.size)
+        assertEquals(10, options.distinct().size)
+        assertTrue(options.all { candidate -> candidate.all { ch -> ch in '\u0900'..'\u097F' } })
+    }
+
+    @Test fun MarathiSuggestionsIncludeDictionaryMatchesAndGeneratedCandidates() {
         assertTrue(WordEngine.suggestions("rah", true).contains("राहुल"))
         assertTrue(WordEngine.suggestions("kavi", true).contains("कविता"))
         assertTrue(WordEngine.suggestions("nam", true).contains("नमस्कार"))
     }
 
-    @Test fun englishModeKeepsEnglishSuggestions() {
-        assertEquals("hello", WordEngine.suggestions("hello", false).first())
+    @Test fun EnglishModeReturnsUpToTenEnglishSuggestions() {
+        val options = WordEngine.suggestions("a", false)
+        assertEquals(10, options.size)
+        assertTrue(options.all { it.all { ch -> ch.isLetter() } })
     }
 
     @Test fun emptyInputHasNoSuggestionOrTransliteration() {

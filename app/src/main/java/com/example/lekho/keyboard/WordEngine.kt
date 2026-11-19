@@ -271,6 +271,100 @@ object WordEngine {
     )
 
     private val englishWords = listOf(
+        // Common short words first, so one- and two-letter prefixes are immediately useful.
+        "the", "of", "and", "to", "in", "a", "is", "that", "for", "as", "it", "was",
+        "with", "on", "be", "not", "by", "i", "this", "are", "he", "or", "from", "at",
+        "his", "an", "have", "which", "but", "you", "had", "they", "were", "one", "their",
+        "we", "all", "can", "her", "has", "there", "if", "more", "been", "when", "she",
+        "would", "will", "other", "who", "no", "so", "these", "its", "what", "may", "do",
+        "time", "some", "than", "new", "about", "also", "only", "into", "them", "out",
+        "such", "my", "two", "him", "up", "first", "see", "could", "any", "then", "most",
+        "your", "between", "me", "our", "after", "should", "like", "over", "many", "did",
+        "said", "people", "even", "because", "how", "well", "where", "through", "made", "very",
+        "those", "work", "now", "each", "must", "use", "life", "way", "used", "both", "same",
+        "state", "being", "before", "years", "much", "however", "under", "world", "man", "make",
+        "own", "just", "system", "part", "three", "while", "good", "during", "us", "long", "does",
+        "number", "another", "back", "great", "down", "here", "without", "know", "different", "case",
+        "general", "right", "high", "found", "still", "since", "little", "might", "against", "too",
+        "take", "year", "within", "example", "children", "place", "given", "order", "power", "important", "info", "inform", "information", "hello", "help", "get", "public", "old", "small", "form", "point", "group", "often", "never",
+        "water", "large", "less", "go", "law", "second", "data", "come", "set", "every", "end", "need",
+        "called", "again", "off", "process", "among", "few", "family", "fact", "control", "human", "left",
+        "school", "later", "say", "following", "possible", "house", "study", "present", "hand", "change",
+        "thought", "table", "history", "early", "think", "last", "came", "home", "research", "find", "value",
+        "several", "level", "until", "around", "far", "four", "course", "yet", "once", "become", "book",
+        "area", "using", "means", "give", "period", "problem", "why", "things", "whether", "country", "based",
+        "times", "body", "act", "something", "person", "nature", "line", "away", "name", "business", "certain",
+        "education", "city", "want", "child", "known", "best", "effect", "type", "white", "help", "company",
+        "common", "put", "section", "going", "side", "either", "problems", "next", "least", "young", "interest",
+        "individual", "let", "service", "policy", "whole", "words", "better", "total", "taken", "seen", "view",
+        "century", "question", "further", "local", "head", "having", "days", "took", "land", "am", "rate",
+        "went", "analysis", "result", "age", "action", "itself", "light", "support", "free", "almost", "class",
+        "making", "party", "look", "terms", "five", "particular", "major", "members", "sense", "position",
+        "language", "love", "together", "experience", "results", "low", "health", "father", "model", "black",
+        "mind", "nothing", "already", "along", "mother", "theory", "necessary", "real", "production", "true",
+        "full", "usually", "open", "subject", "field", "enough", "knowledge", "done", "able", "face", "students",
+        "asked", "changes", "available", "including", "perhaps", "program", "room", "show", "role", "special",
+        "function", "care", "told", "air", "half", "structure", "matter", "similar", "word", "kind", "ever",
+        "money", "short", "woman", "single", "market", "got", "according", "term", "management", "especially",
+        "shown", "force", "provide", "english", "specific", "whose", "evidence", "working", "growth", "held", "areas",
+        "eyes", "office", "began", "third", "energy", "report", "night", "art", "quite", "required", "services",
+        "clear", "percent", "method", "due", "foreign", "past", "higher", "central", "reason", "trade", "values",
+        "future", "material", "population", "treatment", "cost", "countries", "effects", "natural", "increase", "thing",
+        "personal", "really", "west", "toward", "sometimes", "mean", "saw", "food", "science", "current", "approach",
+        "felt", "probably", "test", "read", "greater", "seems", "practice", "note", "main", "lower", "tell",
+        "situation", "keep", "activity", "knew", "surface", "account", "relationship", "cause", "idea", "movement",
+        "close", "heart", "living", "related", "provided", "brought", "plan", "story", "patients", "size", "space",
+        "source", "amount", "looked", "call", "basis", "turn", "paper", "income", "include", "culture", "blood",
+        "difficult", "physical", "nor", "range", "gave", "feel", "needs", "property", "return", "play", "modern",
+        "union", "across", "design", "late", "six", "near", "likely", "finally", "soon", "organization", "developed",
+        "forms", "generally", "today", "strong", "price", "written", "particularly", "department", "influence", "building",
+        "behavior", "pressure", "east", "capital", "believe", "outside", "response", "middle", "basic", "indeed",
+        "books", "increased", "patient", "hard", "works", "decision", "makes", "ways", "turned", "addition", "series",
+        "anything", "rule", "workers", "significant", "industry", "factors", "attention", "hands", "below", "performance",
+        "longer", "methods", "quality", "involved", "simple", "says", "moment", "standard", "behind", "wanted", "son",
+        "purpose", "simply", "normal", "needed", "shows", "job", "relations", "review", "sure", "months", "writing",
+        "established", "ground", "instead", "center", "types", "tax", "complete", "taking", "direct", "continued",
+        "received", "letter", "project", "learning", "issues", "average", "training", "understand", "poor", "levels",
+        "front", "stage", "live", "top", "earlier", "hours", "run", "doing", "points", "parts", "religious",
+        "lines", "text", "beginning", "cultural", "beyond", "understanding", "college", "lost", "distribution", "labor",
+        "difference", "potential", "association", "product", "board", "character", "federal", "alone", "reading", "respect",
+        "wife", "big", "object", "original", "resources", "parents", "loss", "river", "england", "town", "region",
+        "page", "music", "limited", "medical", "seem", "published", "security", "effective", "followed", "door",
+        "india", "forces", "looking", "sea", "meaning", "consider", "authority", "discussion", "answer", "degree",
+        "final", "risk", "bank", "earth", "solution", "council", "financial", "application", "rest", "appear",
+        "produced", "list", "clearly", "move", "street", "army", "products", "voice", "member", "feet", "rules",
+        "leave", "march", "temperature", "pay", "lead", "except", "actually", "volume", "environment", "elements",
+        "complex", "everything", "species", "ten", "importance", "million", "expected", "yes", "friends", "step",
+        "events", "date", "indian", "europe", "differences", "added", "legal", "schools", "key", "status", "condition",
+        "recent", "materials", "wrote", "truth", "primary", "included", "ideas", "bring", "reported", "flow", "fire",
+        "road", "unit", "sent", "mass", "throughout", "literature", "image", "individuals", "meeting", "presence",
+        "sound", "towards", "oil", "cut", "ask", "else", "morning", "spirit", "industrial", "obtained", "scale",
+        "programs", "persons", "appropriate", "directly", "length", "positive", "applied", "appears", "technology",
+        "administration", "direction", "planning", "carried", "equal", "try", "deal", "statement", "produce", "factor",
+        "cross", "operation", "presented", "computer", "observed", "defined", "thinking", "hold", "site", "extent",
+        "post", "start", "base", "reference", "follow", "concept", "determined", "fall", "economy", "hope", "wide",
+        "civil", "author", "ability", "expression", "rates", "staff", "library", "student", "talk", "larger", "kept",
+        "coming", "success", "deep", "placed", "numbers", "record", "peace", "comes", "critical", "agreement",
+        "independent", "concerned", "created", "content", "started", "friend", "former", "pattern", "traditional", "laws",
+        "article", "discussed", "choice", "demand", "commission", "processes", "active", "phase", "provides", "additional",
+        "sources", "access", "freedom", "create", "share", "functions", "interests", "someone", "wall", "meet", "built",
+        "plant", "nation", "entire", "relation", "task", "supply", "chief", "week", "manner", "reached", "certainly",
+        "lives", "gives", "occur", "moral", "minutes", "tried", "takes", "politics", "weight", "exchange", "distance",
+        "lack", "context", "paid", "principle", "born", "immediately", "passed", "box", "relative", "style", "bad",
+        "justice", "communication", "existence", "reasons", "principles", "hundred", "inside", "lot", "met", "attempt",
+        "construction", "dead", "highly", "green", "feeling", "introduction", "strength", "useful", "neither", "moved",
+        "actual", "noted", "opinion", "internal", "police", "failure", "remember", "parties", "relatively", "develop",
+        "car", "instance", "follows", "constant", "popular", "picture", "religion", "trying", "notes", "sample", "companies",
+        "determine", "features", "easily", "pain", "contact", "previous", "seven", "news", "measure", "myself", "getting",
+        "dark", "memory", "reality", "negative", "january", "stock", "appeared", "serious", "nearly", "speech", "teacher",
+        "fear", "teachers", "effort", "october", "suggested", "rise", "separate", "allowed", "despite", "faith", "output",
+        "professional", "goods", "worked", "upper", "heat", "units", "investment", "procedure", "film", "impact", "herself",
+        "sun", "december", "variety", "continue", "september", "cold", "network", "gone", "miles", "families", "giving",
+        "scientific", "division", "examples", "characteristics", "formed", "august", "decided", "teaching", "essential", "minister",
+        "initial", "hour", "increasing", "employment", "places", "male", "compared", "marriage", "remain", "equipment",
+        "letters", "forward", "event", "capacity", "hear", "female", "district", "nations", "germany", "measures", "girl",
+        "mentioned", "speak", "efforts", "caused", "aspects", "whatever", "brown", "add", "frequently", "daily", "stand",
+        // Original application-oriented terms remain in the priority set.
         "about", "account", "after", "again", "all", "also", "always", "and", "any", "app",
         "are", "available", "because", "before", "business", "can", "change", "check", "come",
         "day", "dear", "details", "do", "document", "done", "each", "email", "english", "every",
@@ -307,6 +401,34 @@ object WordEngine {
         "yesterday", "young", "zero", "helping", "helped", "healthy", "hearing", "heaven", "heading"
     )
 
+    // The curated words above are preferred for useful everyday suggestions.
+    // A larger offline SCOWL-derived list is loaded from app/src/main/assets at IME startup.
+    @Volatile private var englishLexicon: List<String> = englishWords.distinct()
+    @Volatile private var englishWordSet: Set<String> = englishLexicon.toHashSet()
+    @Volatile private var englishByFirstLetter: Map<Char, List<String>> = englishLexicon.groupBy { it.first() }
+    @Volatile private var englishByFirstTwo: Map<String, List<String>> = englishLexicon
+        .filter { it.length >= 2 }.groupBy { it.take(2) }
+    @Volatile private var englishByLength: Map<Int, List<String>> = englishLexicon.groupBy { it.length }
+
+    /** Merge a bundled offline English dictionary while keeping curated/common words first. */
+    @Synchronized
+    fun addEnglishDictionaryWords(words: Iterable<String>) {
+        val merged = LinkedHashSet<String>()
+        englishWords.forEach { word ->
+            val normalized = word.trim().lowercase(Locale.ROOT)
+            if (normalized.length in 1..18 && normalized.all { it in 'a'..'z' }) merged.add(normalized)
+        }
+        words.forEach { word ->
+            val normalized = word.trim().lowercase(Locale.ROOT)
+            if (normalized.length in 2..18 && normalized.all { it in 'a'..'z' }) merged.add(normalized)
+        }
+        val list = merged.toList()
+        englishLexicon = list
+        englishWordSet = list.toHashSet()
+        englishByFirstLetter = list.groupBy { it.first() }
+        englishByFirstTwo = list.filter { it.length >= 2 }.groupBy { it.take(2) }
+        englishByLength = list.groupBy { it.length }
+    }
 
     // Alternative phonetic readings used to build up to ten Marathi candidates.
     private data class ParseState(val output: String, val pendingConsonant: Boolean)
@@ -399,15 +521,7 @@ object WordEngine {
         val key = token.trim().lowercase(Locale.ROOT)
         if (key.isBlank()) return emptyList()
 
-        if (!marathiMode) {
-            return buildList {
-                if (key in englishWords) add(token)
-                englishWords.asSequence()
-                    .filter { it.startsWith(key) && it != key }
-                    .forEach(::add)
-                if (isEmpty()) add(token)
-            }.distinct().take(10)
-        }
+        if (!marathiMode) return englishSuggestions(token, key)
 
         val results = linkedSetOf<String>()
         marathiWords[key]?.let(results::add)
@@ -419,6 +533,83 @@ object WordEngine {
         phoneticCandidates(key, 32).forEach(results::add)
         if (results.isEmpty()) results.add(token)
         return results.take(10)
+    }
+
+    /** Prefix autocomplete plus one-edit spelling correction, all fully offline. */
+    private fun englishSuggestions(originalToken: String, key: String): List<String> {
+        val results = linkedSetOf<String>()
+        val exact = key in englishWordSet
+        if (exact) results.add(originalToken)
+
+        val source = if (key.length >= 2) {
+            englishByFirstTwo[key.take(2)].orEmpty()
+        } else {
+            englishByFirstLetter[key.first()].orEmpty()
+        }
+        val prefixMatches = source.asSequence()
+            .filter { it.startsWith(key) && it != key }
+            .toList()
+
+        // When there is no exact word and only a few prefix completions, place likely
+        // one-character corrections (including adjacent transpositions) ahead of rare
+        // dictionary completions. Example: "helo" should offer "hello" prominently.
+        if (!exact && key.length in 4..14 && prefixMatches.size < 8) {
+            val corrections = ArrayList<String>()
+            for (length in listOf(key.length + 1, key.length)) {
+                for (candidate in englishByLength[length].orEmpty()) {
+                    if (candidate == key || candidate.startsWith(key)) continue
+                    if (candidate.firstOrNull() != key.first()) continue
+                    if (oneEditDistance(key, candidate) == 1) corrections.add(candidate)
+                }
+            }
+            corrections.forEach { results.add(applyEnglishCase(originalToken, it)) }
+        }
+
+        prefixMatches.forEach { results.add(applyEnglishCase(originalToken, it)) }
+        if (results.isEmpty()) results.add(originalToken)
+        return results.take(10).toList()
+    }
+
+    private fun applyEnglishCase(template: String, candidate: String): String = when {
+        template.isNotEmpty() && template.all { it.isUpperCase() } -> candidate.uppercase(Locale.ROOT)
+        template.firstOrNull()?.isUpperCase() == true -> candidate.replaceFirstChar { it.uppercase(Locale.ROOT) }
+        else -> candidate
+    }
+
+    /** Returns 0 or 1 for an exact/one-edit match, otherwise null. Includes adjacent transposition. */
+    private fun oneEditDistance(left: String, right: String): Int? {
+        if (left == right) return 0
+        if (kotlin.math.abs(left.length - right.length) > 1) return null
+
+        if (left.length == right.length) {
+            val mismatches = left.indices.filter { left[it] != right[it] }
+            return when (mismatches.size) {
+                1 -> 1
+                2 -> {
+                    val a = mismatches[0]
+                    val b = mismatches[1]
+                    if (b == a + 1 && left[a] == right[b] && left[b] == right[a]) 1 else null
+                }
+                else -> null
+            }
+        }
+
+        val shorter = if (left.length < right.length) left else right
+        val longer = if (left.length < right.length) right else left
+        var shortIndex = 0
+        var longIndex = 0
+        var skipped = false
+        while (shortIndex < shorter.length && longIndex < longer.length) {
+            if (shorter[shortIndex] == longer[longIndex]) {
+                shortIndex++
+                longIndex++
+            } else {
+                if (skipped) return null
+                skipped = true
+                longIndex++
+            }
+        }
+        return 1
     }
 
     /** Generate ordered phonetic candidates using a bounded beam over ambiguous Roman sounds. */

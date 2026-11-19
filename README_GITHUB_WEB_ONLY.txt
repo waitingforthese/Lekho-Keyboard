@@ -1,50 +1,57 @@
-LEKHO KEYBOARD V1.6.2 — CONTINUOUS SUGGESTIONS + AUTO SPACE
+LEKHO KEYBOARD V1.6.3 — ENGLISH SUGGESTIONS + PAUSE-AWARE HISTORY
 
-BASELINE
-- V1.6.1 remains the locked reference baseline and is not modified.
-- V1.6.2 is a follow-on update based on the exact V1.6.1 build-fix source.
-- Existing Gboard-inspired keyboard layout, colors, fonts, key sizes, toolbar, Marathi phonetic engine, history limit/order, Shift/Caps, Enter and hold-Backspace behavior are retained.
+REFERENCE BASELINE
+- V1.6.2 is now the saved reference baseline. Its ZIP snapshot must not be overwritten.
+- V1.6.3 is a follow-on update created from the exact V1.6.2 GitHub Web Files package.
+- Preserve the existing Gboard-inspired UI, Marathi phonetic engine, 10-candidate strip, automatic space after candidate selection, Shift/Caps, Enter, hold-Backspace, clipboard/history screens and history order.
 
-CHANGES
-1. Continuous candidates while typing:
-   - Roman letters are entered as one active InputConnection composing span.
-   - Each key updates the complete composing token and refreshes the candidate row.
-   - InputMethodService.onUpdateSelection also refreshes the candidate row when an editor reports selection/composition changes.
-   - This keeps suggestions updating after the first and second letters through the end of the word, rather than relying only on a stale token snapshot.
-2. Candidate selection inserts the selected word followed by one space automatically in both Marathi and English modes.
-3. Backspace edits the composing token one grapheme at a time while composition is active.
-4. Expanded the curated offline English suggestion vocabulary for common longer prefixes.
-5. Updated Android versionName to 1.6.2 and versionCode to 8.
+V1.6.3 CHANGES
+1. English suggestions:
+   - Adds an offline English dictionary with 61,875 lowercase alphabetic entries.
+   - Keeps common application and everyday words at the front of the suggestion ranking.
+   - Uses prefix search from the first letters through the complete token, with up to ten results.
+   - Adds conservative one-edit / adjacent-letter-transposition correction when there are few prefix completions (for example, "helo" can suggest "hello" and "infrom" can suggest "inform").
+   - Preserves typed capitalization for suggestions.
+2. Save a word after a typing pause:
+   - After 900 ms without a new key, the currently typed token is saved to local Typing History without inserting a space or committing the text into the editor.
+   - If typing continues after a pause, the later version of the token can be saved after the next pause as a separate history entry. This follows the existing duplicate-preserving sequence behavior.
+   - Pressing Space, Enter, punctuation or selecting a suggestion still completes the word normally. A token already saved during the pause is not saved a second time when it is completed or the same suggestion is selected.
+   - Password/PIN fields and editors that set IME_FLAG_NO_PERSONALIZED_LEARNING remain excluded from history and suggestions.
+3. App version is 1.6.3 (versionCode 9).
 
-GOOGLE GBOARD PACKAGE CHECK
-- Google Play identifies the Gboard application with package id: com.google.android.inputmethod.latin.
-- Gboard's suggestion / transliteration engine is proprietary; its internal classes and private package interfaces are not a public Android API and must not be treated as a callable library.
-- This implementation therefore uses Android's public InputConnection composing-text interface, the same standard contract available to any Android IME: setComposingText() while a word is being edited, then commitText() to finalize it.
+ENGLISH WORDLIST NOTICE
+- The bundled offline English vocabulary is filtered from the SCOWL / en_US Hunspell dictionary available in the development environment.
+- Only lowercase ASCII alphabetic words of 2–18 characters are included in the asset. The application's curated list separately includes short common English tokens such as "a" and "i".
+- The corresponding SCOWL / dictionary copyright and permission notice is included at THIRD_PARTY_NOTICES/SCOWL_ENGLISH_DICTIONARY.txt. Keep that notice with the source and distribution.
 
 FILES TO REPLACE / ADD
 1. Replace app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
 2. Replace app/src/main/java/com/example/lekho/keyboard/WordEngine.kt
 3. Replace app/src/test/java/com/example/lekho/keyboard/WordEngineTest.kt
 4. Replace app/build.gradle.kts
+5. Create app/src/main/assets/english_words.txt
+6. Create THIRD_PARTY_NOTICES/SCOWL_ENGLISH_DICTIONARY.txt
 
 GITHUB WEBSITE ONLY
-A. Keep V1.6.1 as the saved baseline. Do not overwrite or delete its ZIP/source snapshot.
-B. In the GitHub website, create branch: v1.6.2-continuous-suggestions
-C. Replace the four existing files above using the full contents from this ZIP.
+A. Keep the separate V1.6.2 locked baseline ZIP as the reference snapshot.
+B. In the GitHub website, create branch: v1.6.3-english-suggestions-idle-history
+C. Replace the four existing files above and create the two new files above using the full file contents from this ZIP.
 D. Commit the changes to that branch.
-E. Open a Pull Request with base=main and compare=v1.6.2-continuous-suggestions.
-F. Wait for GitHub Actions to pass both unit tests and assembleDebug before merging or installing.
+E. Open a Pull Request with base=main and compare=v1.6.3-english-suggestions-idle-history.
+F. Wait for GitHub Actions to pass unit tests and assembleDebug before merging or installing the APK.
 
 TESTING CHECKLIST AFTER APK INSTALL
-- Marathi mode: type r -> ra -> rah -> rahu -> rahul; candidates should refresh at each keystroke.
-- Marathi mode: type ma -> mah -> maha -> maharashtra; candidates should continue updating through the full token.
-- English mode: type h -> he -> hel -> hell -> hello; candidate list should update at each step.
-- English mode: type i -> in -> inf -> info -> infor -> inform; suggestions should continue beyond the first two letters.
-- Tap any Marathi or English candidate: the word should be inserted with exactly one trailing space; the next word can be typed immediately without pressing Space again.
-- Test Backspace while a Roman word is still being composed, then press Space and Enter.
+- English: type h -> he -> hel -> hell -> hello; suggestions should refresh at each character.
+- English: type i -> in -> inf -> info -> infor -> inform; suggestions should continue through the whole token.
+- English typo check: type helo and infrom; check for hello and inform among the suggestions.
+- Marathi: type rahul and namaskar; Marathi suggestions and transliteration should still work.
+- Type a word and pause for about one second without pressing Space; check that the word appears in Typing History while remaining in the text field.
+- Continue typing after a pause; check that the newer token version is saved after the next pause.
+- Press Space after an already saved pause token; it should not create a second history entry for the same completion.
+- Select a suggestion; it should still insert exactly one trailing space.
+- Verify history does not save in password/PIN/private editors.
 
-ACCURACY / LIMITATIONS
-- The app uses an offline phonetic Marathi dictionary and sound-variant generator. Ten candidates are shown when the engine has ten distinct results; very short or unambiguous prefixes can naturally have fewer meaningful alternatives.
-- English suggestions are offline and use a curated vocabulary. Uncommon prefixes may return fewer alternatives than Gboard.
-- The package is not a clone of Gboard's private language model. No Gboard APK code or private interface is copied or invoked.
-- Full Android Gradle build must be verified by GitHub Actions after these changes are committed. The Kotlin engine was independently compiled and its offline dictionary loading/prefix outputs were tested locally; the Android service itself has not yet been built in this environment.
+LIMITATIONS
+- Gboard's private language model/package internals are proprietary and are not a public API. This version does not copy or call Gboard code; it uses Android's public InputConnection interface and its own offline English/Marathi vocabulary.
+- The English dictionary provides broader prefix matches and basic one-edit correction, not a neural next-word prediction model. Its ranking will not be identical to Gboard.
+- The full Android Gradle build must be verified by GitHub Actions after the files are committed. The offline WordEngine has been independently compiled and smoke-tested in this environment; the Android IME service has not yet been built here.

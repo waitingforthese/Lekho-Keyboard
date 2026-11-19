@@ -72,6 +72,27 @@ class WordEngineTest {
         assertEquals(10, options.distinct().size)
     }
 
+    @Test fun EnglishAutocompleteUsesCommonPrefixWords() {
+        val hello = WordEngine.suggestions("hel", false)
+        assertTrue(hello.contains("hello"))
+        assertTrue(hello.contains("help"))
+        val inWords = WordEngine.suggestions("in", false)
+        assertTrue(inWords.contains("in"))
+        assertTrue(inWords.contains("into"))
+    }
+
+    @Test fun EnglishAutocompleteOffersSimpleTypoCorrection() {
+        assertTrue(WordEngine.suggestions("helo", false).contains("hello"))
+        assertTrue(WordEngine.suggestions("infrom", false).contains("inform"))
+    }
+
+    @Test fun ExtendedEnglishDictionaryAddsUncommonWordsWithoutBreakingPrefixSearch() {
+        WordEngine.addEnglishDictionaryWords(listOf("xylophone", "xylem", "xylitol"))
+        val options = WordEngine.suggestions("xyl", false)
+        assertTrue(options.contains("xylophone"))
+        assertTrue(options.contains("xylem"))
+    }
+
     @Test fun emptyInputHasNoSuggestionOrTransliteration() {
         assertEquals(null, WordEngine.transliterate(" "))
         assertTrue(WordEngine.suggestions("", true).isEmpty())

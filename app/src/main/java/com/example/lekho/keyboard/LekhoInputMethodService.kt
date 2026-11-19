@@ -26,8 +26,8 @@ import android.widget.TextView
 import java.util.Locale
 
 /**
- * Lekho Keyboard V1.6.2 — Gboard-like composing and continuous suggestions.
- * This service intentionally stores committed words only (not full messages).
+ * Lekho Keyboard V1.6.3 — expanded English suggestions and pause-aware typing history.
+ * Typing history stores committed words and words paused on for a short idle interval; full messages are not stored.
  */
 class LekhoInputMethodService : InputMethodService() {
     private enum class Layout { LETTERS, NUMBERS, SYMBOLS }
@@ -51,6 +51,17 @@ class LekhoInputMethodService : InputMethodService() {
     private val suggestionCells = mutableListOf<TextView>()
     private val history = mutableListOf<String>()
     private val prefs by lazy { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    private var englishDictionaryLoaded = false
+
+    // Save an in-progress word to local history when typing pauses, without inserting a space.
+    private val typingPauseHandler = Handler(Looper.getMainLooper())
+    private var typingTokenActive = false
+    // Authoritative local buffer prevents editors with incomplete composing callbacks from
+    // truncating the token used for suggestions after the first few keystrokes.
+    private var composingTokenBuffer = ""
+    private var lastIdleSavedToken: String? = null
+    private var lastIdleSavedMarathiMode: Boolean? = null
+    private val saveTypingAfterPause = Runnable { saveCurrentTokenAfterPause() }
 
     // Long-press backspace: single tap deletes one grapheme; hold repeats until release.
     private val backspaceHandler = Handler(Looper.getMainLooper())
@@ -69,6 +80,7 @@ class LekhoInputMethodService : InputMethodService() {
     }
 
     override fun onCreateInputView(): View {
+        loadEnglishDictionaryIfNeeded()
         loadHistory()
         applyNavigationBarStyle()
         root = LinearLayout(this).apply {
@@ -103,6 +115,11 @@ class LekhoInputMethodService : InputMethodService() {
         capsLock = false
         composingTokenActive = false
         composingSupported = true
+        typingPauseHandler.removeCallbacks(saveTypingAfterPause)
+        typingTokenActive = false
+        composingTokenBuffer = ""
+        lastIdleSavedToken = null
+        lastIdleSavedMarathiMode = null
         renderKeys()
         refreshTopStrip()
     }
@@ -124,11 +141,16 @@ class LekhoInputMethodService : InputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         stopBackspaceRepeat(refresh = false)
+        typingPauseHandler.removeCallbacks(saveTypingAfterPause)
+        // Finalize any pending composing word before the editor/IME session is hidden.
+        // This also prevents a reopened keyboard from appending to a stale local buffer.
+        if (typingTokenActive || composingTokenActive) commitCurrentTokenAndSeparator()
         super.onFinishInputView(finishingInput)
     }
 
     override fun onDestroy() {
         stopBackspaceRepeat(refresh = false)
+        typingPauseHandler.removeCallbacks(saveTypingAfterPause)
         super.onDestroy()
     }
 
@@ -345,6 +367,7 @@ class LekhoInputMethodService : InputMethodService() {
             "⌫" -> deleteOneGrapheme()
             "↵" -> performEnter()
             "🌐" -> {
+                if (typingTokenActive || composingTokenActive) commitCurrentTokenAndSeparator()
                 marathiMode = !marathiMode
                 emojiMode = false
                 historyMode = false
@@ -377,24 +400,27 @@ class LekhoInputMethodService : InputMethodService() {
                 val value = if ((shiftEnabled || capsLock) && layout == Layout.LETTERS) key.uppercase(Locale.ROOT) else key
                 val isAlphabeticKey = layout == Layout.LETTERS && key.length == 1 && key[0].isLetter()
                 if (isAlphabeticKey && !isSensitiveField()) {
-                    // Keep the whole in-progress Roman word in a composing span, like a
-                    // conventional predictive IME. Each keystroke replaces the same span,
-                    // so suggestions continue updating for the complete token.
-                    val nextToken = currentToken() + value
+                    // Keep the complete current token active so suggestions can update on
+                    // every keypress. Editors that reject composing spans still get a
+                    // plain-text fallback and the same idle-history behavior.
+                    val previousToken = if (typingTokenActive) composingTokenBuffer else currentTokenFromEditor()
+                    val nextToken = previousToken + value
+                    composingTokenBuffer = nextToken
+                    typingTokenActive = true
                     if (composingSupported) {
                         composingTokenActive = connection.setComposingText(nextToken, 1)
                         if (!composingTokenActive) {
-                            // Some third-party editors do not support composing spans.
-                            // Finalize the whole token once, then continue in plain-text mode.
                             connection.commitText(nextToken, 1)
                             composingSupported = false
                         }
                     } else {
                         connection.commitText(value, 1)
                     }
+                    scheduleTypingPauseSave()
                 } else {
-                    if (composingTokenActive) {
-                        // End the current word before inserting a number or symbol key.
+                    if (composingTokenActive || typingTokenActive) {
+                        // End the current word before inserting a number or symbol key,
+                        // including in editors that do not support composing spans.
                         commitCurrentTokenAndSeparator()
                     }
                     connection.commitText(value, 1)
@@ -414,10 +440,12 @@ class LekhoInputMethodService : InputMethodService() {
         if (!selected.isNullOrEmpty()) {
             connection.commitText("", 1)
             composingTokenActive = false
+            composingTokenBuffer = currentTokenFromEditor()
+            updateTypingPauseAfterEdit()
             if (refreshAfterDelete) refreshTopStrip()
             return
         }
-        if (composingTokenActive) {
+        if (typingTokenActive || composingTokenActive) {
             val token = currentToken()
             if (token.isNotEmpty()) {
                 val iterator = BreakIterator.getCharacterInstance(Locale.getDefault())
@@ -425,22 +453,38 @@ class LekhoInputMethodService : InputMethodService() {
                 val boundary = iterator.preceding(token.length)
                 val keepLength = if (boundary == BreakIterator.DONE) 0 else boundary
                 val shortened = token.substring(0, keepLength)
-                if (shortened.isEmpty()) {
-                    connection.commitText("", 1)
-                    composingTokenActive = false
-                } else {
-                    val updated = connection.setComposingText(shortened, 1)
-                    composingTokenActive = updated
-                    if (!updated) {
-                        val removedLength = token.length - shortened.length
-                        connection.deleteSurroundingText(removedLength, 0)
-                        composingSupported = false
+                val removedLength = token.length - shortened.length
+                if (composingTokenActive) {
+                    if (shortened.isEmpty()) {
+                        connection.commitText("", 1)
+                        composingTokenActive = false
+                    } else {
+                        val updated = connection.setComposingText(shortened, 1)
+                        composingTokenActive = updated
+                        if (!updated) {
+                            connection.deleteSurroundingText(removedLength, 0)
+                            composingSupported = false
+                        }
                     }
+                } else if (removedLength > 0) {
+                    connection.deleteSurroundingText(removedLength, 0)
+                }
+                composingTokenBuffer = shortened
+                if (shortened.isEmpty()) {
+                    typingTokenActive = false
+                    typingPauseHandler.removeCallbacks(saveTypingAfterPause)
+                    lastIdleSavedToken = null
+                    lastIdleSavedMarathiMode = null
+                } else {
+                    typingTokenActive = true
+                    scheduleTypingPauseSave()
                 }
                 if (refreshAfterDelete) refreshTopStrip()
                 return
             }
             composingTokenActive = false
+            typingTokenActive = false
+            composingTokenBuffer = ""
         }
         val before = connection.getTextBeforeCursor(48, 0)?.toString().orEmpty()
         if (before.isEmpty()) return
@@ -449,6 +493,7 @@ class LekhoInputMethodService : InputMethodService() {
         val boundary = iterator.preceding(before.length)
         val deleteLength = if (boundary == BreakIterator.DONE) 1 else before.length - boundary
         connection.deleteSurroundingText(deleteLength, 0)
+        updateTypingPauseAfterEdit()
         if (refreshAfterDelete) refreshTopStrip()
     }
 
@@ -489,6 +534,11 @@ class LekhoInputMethodService : InputMethodService() {
     }
 
     private fun currentToken(): String {
+        if (typingTokenActive && composingTokenBuffer.isNotEmpty()) return composingTokenBuffer
+        return currentTokenFromEditor()
+    }
+
+    private fun currentTokenFromEditor(): String {
         val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString().orEmpty()
         return before.takeLastWhile { it.isLetter() || it == '\'' }
     }
@@ -499,8 +549,14 @@ class LekhoInputMethodService : InputMethodService() {
      */
     private fun commitCurrentTokenAndSeparator(separator: String? = null) {
         val connection = currentInputConnection ?: return
+        typingPauseHandler.removeCallbacks(saveTypingAfterPause)
         if (isSensitiveField()) {
             separator?.let { connection.commitText(it, 1) }
+            typingTokenActive = false
+            composingTokenActive = false
+            composingTokenBuffer = ""
+            lastIdleSavedToken = null
+            lastIdleSavedMarathiMode = null
             return
         }
 
@@ -515,11 +571,55 @@ class LekhoInputMethodService : InputMethodService() {
                 connection.commitText(completedWord, 1)
                 separator?.let { connection.commitText(it, 1) }
             }
-            remember(completedWord)
+            val alreadySavedDuringPause = lastIdleSavedToken == token && lastIdleSavedMarathiMode == marathiMode
+            if (!alreadySavedDuringPause) remember(completedWord)
         } else {
             separator?.let { connection.commitText(it, 1) }
         }
         composingTokenActive = false
+        typingTokenActive = false
+        composingTokenBuffer = ""
+        lastIdleSavedToken = null
+        lastIdleSavedMarathiMode = null
+    }
+
+    private fun scheduleTypingPauseSave() {
+        typingPauseHandler.removeCallbacks(saveTypingAfterPause)
+        if (!typingTokenActive || isSensitiveField()) return
+        typingPauseHandler.postDelayed(saveTypingAfterPause, TYPING_PAUSE_SAVE_DELAY_MS)
+    }
+
+    private fun updateTypingPauseAfterEdit() {
+        val hasToken = currentTokenFromEditor().isNotBlank() && !isSensitiveField()
+        typingTokenActive = hasToken
+        composingTokenBuffer = if (hasToken) currentTokenFromEditor() else ""
+        if (hasToken) {
+            scheduleTypingPauseSave()
+        } else {
+            typingPauseHandler.removeCallbacks(saveTypingAfterPause)
+            lastIdleSavedToken = null
+            lastIdleSavedMarathiMode = null
+        }
+    }
+
+    private fun saveCurrentTokenAfterPause() {
+        if (!typingTokenActive || isSensitiveField()) return
+        val token = currentToken()
+        if (token.isBlank()) return
+        if (lastIdleSavedToken == token && lastIdleSavedMarathiMode == marathiMode) return
+        val word = if (marathiMode) WordEngine.transliterate(token) ?: token else token
+        remember(word)
+        lastIdleSavedToken = token
+        lastIdleSavedMarathiMode = marathiMode
+    }
+
+    private fun loadEnglishDictionaryIfNeeded() {
+        if (englishDictionaryLoaded) return
+        val words = runCatching {
+            assets.open("english_words.txt").bufferedReader().useLines { sequence -> sequence.toList() }
+        }.getOrDefault(emptyList())
+        WordEngine.addEnglishDictionaryWords(words)
+        englishDictionaryLoaded = true
     }
 
     private fun refreshTopStrip() {
@@ -596,7 +696,11 @@ class LekhoInputMethodService : InputMethodService() {
                 setOnClickListener { view ->
                     val word = view.tag as? String ?: return@setOnClickListener
                     val connection = currentInputConnection ?: return@setOnClickListener
+                    typingPauseHandler.removeCallbacks(saveTypingAfterPause)
                     val tokenNow = currentToken()
+                    val pauseSavedWord = if (marathiMode) WordEngine.transliterate(tokenNow) ?: tokenNow else tokenNow
+                    val alreadySavedDuringPause = lastIdleSavedToken == tokenNow &&
+                        lastIdleSavedMarathiMode == marathiMode && pauseSavedWord == word
                     if (composingTokenActive) {
                         // A selected candidate is a completed word: insert its trailing
                         // space automatically so the user can immediately type the next word.
@@ -606,7 +710,11 @@ class LekhoInputMethodService : InputMethodService() {
                         connection.commitText("$word ", 1)
                     }
                     composingTokenActive = false
-                    remember(word)
+                    typingTokenActive = false
+                    composingTokenBuffer = ""
+                    lastIdleSavedToken = null
+                    lastIdleSavedMarathiMode = null
+                    if (!alreadySavedDuringPause) remember(word)
                     moreToolsMode = false
                     refreshTopStrip()
                 }
@@ -787,6 +895,7 @@ class LekhoInputMethodService : InputMethodService() {
         private const val KEY_HISTORY = "history"
         private const val KEY_HISTORY_ENABLED = "history_enabled"
         private const val MAX_HISTORY_ITEMS = 100
+        private const val TYPING_PAUSE_SAVE_DELAY_MS = 900L
         private val EMOJI_SHORTCUTS = listOf("😀", "😂", "😊", "😍", "🙏", "👍", "❤️", "🎉", "😎", "🥰")
 
         private val COLOR_PANEL = Color.rgb(241, 240, 247)

@@ -23,11 +23,14 @@ import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.util.LinkedHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 import java.util.Locale
 
 /**
- * Lekho Keyboard V1.6.4 — expanded English suggestions and 2-second pause-aware typing history.
- * Typing history stores committed words and words paused on for a short idle interval; full messages are not stored.
+ * लिखो V1.6.8 — SQLite-backed 20,000-word history with background dictionary and suggestion work.
+ * Only individual words are stored; message snapshots are transient and used only to detect an external Send clear.
  */
 class LekhoInputMethodService : InputMethodService() {
     private enum class Layout { LETTERS, NUMBERS, SYMBOLS }
@@ -51,7 +54,18 @@ class LekhoInputMethodService : InputMethodService() {
     private val suggestionCells = mutableListOf<TextView>()
     private val history = mutableListOf<String>()
     private val prefs by lazy { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
-    private var englishDictionaryLoaded = false
+    private val engineExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "Likho-Suggestions").apply { priority = Thread.NORM_PRIORITY - 1 }
+    }
+    private val suggestionRequest = AtomicLong(0L)
+    private val suggestionCache = object : LinkedHashMap<String, List<String>>(256, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean = size > 256
+    }
+    private var englishDictionaryLoadStarted = false
+    // Small in-memory recent-word cache for the keyboard's history strip only.
+    private val recentHistoryCacheSize = 100
+    private var historyCacheRevision = 0L
+    private var historyLoadGeneration = 0L
 
     // Save an in-progress word to local history when typing pauses, without inserting a space.
     private val typingPauseHandler = Handler(Looper.getMainLooper())
@@ -62,6 +76,19 @@ class LekhoInputMethodService : InputMethodService() {
     private var lastIdleSavedToken: String? = null
     private var lastIdleSavedMarathiMode: Boolean? = null
     private val saveTypingAfterPause = Runnable { saveCurrentTokenAfterPause() }
+
+    // The editor snapshot is transient. When another app clears a composed message after Send,
+    // save only its final word; never persist the full message body.
+    private var lastEditorTextSnapshot = ""
+    private var pendingExternalSendToken: String? = null
+    private var pendingExternalSendMode = true
+    private val saveExternalSendCandidate = Runnable {
+        val currentSnapshot = readEditorTextSnapshot() ?: return@Runnable
+        if (currentSnapshot.isNotBlank()) return@Runnable
+        savePendingExternalSendWord()
+    }
+    private var lastHistorySourceToken: String? = null
+    private var lastHistorySourceMode: Boolean? = null
 
     // Long-press backspace: single tap deletes one grapheme; hold repeats until release.
     private val backspaceHandler = Handler(Looper.getMainLooper())
@@ -80,7 +107,7 @@ class LekhoInputMethodService : InputMethodService() {
     }
 
     override fun onCreateInputView(): View {
-        loadEnglishDictionaryIfNeeded()
+        loadEnglishDictionaryInBackground()
         loadHistory()
         applyNavigationBarStyle()
         root = LinearLayout(this).apply {
@@ -120,6 +147,13 @@ class LekhoInputMethodService : InputMethodService() {
         composingTokenBuffer = ""
         lastIdleSavedToken = null
         lastIdleSavedMarathiMode = null
+        lastHistorySourceToken = null
+        lastHistorySourceMode = null
+        // Begin tracking only after this IME session starts; pre-existing editor text may
+        // have been entered with another keyboard and must not be attributed to लिखो.
+        lastEditorTextSnapshot = ""
+        typingPauseHandler.removeCallbacks(saveExternalSendCandidate)
+        pendingExternalSendToken = null
         renderKeys()
         refreshTopStrip()
     }
@@ -134,16 +168,58 @@ class LekhoInputMethodService : InputMethodService() {
         candidatesEnd: Int
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
-        // Some editors update their selection/composing range asynchronously. Refreshing
-        // here keeps candidates synchronized even when the editor changes the text itself.
+        if (isSensitiveField()) {
+            lastEditorTextSnapshot = ""
+            typingPauseHandler.removeCallbacks(saveExternalSendCandidate)
+            pendingExternalSendToken = null
+        } else {
+            val currentSnapshot = readEditorTextSnapshot()
+            if (currentSnapshot != null) {
+                // Any later editor update confirms that the previously observed clear
+                // transition was real, even if the user has already started the next message.
+                if (pendingExternalSendToken != null) {
+                    typingPauseHandler.removeCallbacks(saveExternalSendCandidate)
+                    savePendingExternalSendWord()
+                }
+                val previousSnapshot = lastEditorTextSnapshot
+                if (previousSnapshot.isNotBlank() && currentSnapshot.isBlank()) {
+                    typingPauseHandler.removeCallbacks(saveTypingAfterPause)
+                    typingTokenActive = false
+                    composingTokenActive = false
+                    composingTokenBuffer = ""
+                    lastIdleSavedToken = null
+                    lastIdleSavedMarathiMode = null
+                    val candidate = HistorySequence.extractLastWord(previousSnapshot)
+                    if (!candidate.isNullOrBlank()) {
+                        pendingExternalSendToken = candidate
+                        pendingExternalSendMode = marathiMode
+                        typingPauseHandler.removeCallbacks(saveExternalSendCandidate)
+                        typingPauseHandler.postDelayed(saveExternalSendCandidate, EXTERNAL_SEND_CLEAR_CONFIRM_MS)
+                    }
+                }
+                lastEditorTextSnapshot = currentSnapshot
+            }
+        }
         if (root != null) refreshTopStrip()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         stopBackspaceRepeat(refresh = false)
         typingPauseHandler.removeCallbacks(saveTypingAfterPause)
+        // Some host apps hide the IME immediately after Send without delivering a selection
+        // callback. Compare the last observed non-empty editor with the current empty editor.
+        if (pendingExternalSendToken == null && !isSensitiveField() && lastEditorTextSnapshot.isNotBlank()) {
+            val currentSnapshot = readEditorTextSnapshot()
+            if (currentSnapshot != null && currentSnapshot.isBlank()) {
+                pendingExternalSendToken = HistorySequence.extractLastWord(lastEditorTextSnapshot)
+                pendingExternalSendMode = marathiMode
+            }
+        }
+        // Finish a pending clear-confirmation check now instead of dropping the last word.
+        if (pendingExternalSendToken != null) saveExternalSendCandidate.run()
+        typingPauseHandler.removeCallbacks(saveExternalSendCandidate)
+        pendingExternalSendToken = null
         // Finalize any pending composing word before the editor/IME session is hidden.
-        // This also prevents a reopened keyboard from appending to a stale local buffer.
         if (typingTokenActive || composingTokenActive) commitCurrentTokenAndSeparator()
         super.onFinishInputView(finishingInput)
     }
@@ -151,6 +227,8 @@ class LekhoInputMethodService : InputMethodService() {
     override fun onDestroy() {
         stopBackspaceRepeat(refresh = false)
         typingPauseHandler.removeCallbacks(saveTypingAfterPause)
+        typingPauseHandler.removeCallbacks(saveExternalSendCandidate)
+        engineExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -404,6 +482,10 @@ class LekhoInputMethodService : InputMethodService() {
                     // every keypress. Editors that reject composing spans still get a
                     // plain-text fallback and the same idle-history behavior.
                     val previousToken = if (typingTokenActive) composingTokenBuffer else currentTokenFromEditor()
+                    if (!typingTokenActive && previousToken.isEmpty()) {
+                        lastHistorySourceToken = null
+                        lastHistorySourceMode = null
+                    }
                     val nextToken = previousToken + value
                     composingTokenBuffer = nextToken
                     typingTokenActive = true
@@ -504,6 +586,8 @@ class LekhoInputMethodService : InputMethodService() {
      */
     private fun performEnter() {
         val connection = currentInputConnection ?: return
+        // This keyboard already finalizes and saves its pending word below. If the host
+        // app subsequently clears the editor, the source-token marker prevents a duplicate.
         commitCurrentTokenAndSeparator()
         val info = currentInputEditorInfo
         val inputType = info?.inputType ?: InputType.TYPE_CLASS_TEXT
@@ -530,6 +614,7 @@ class LekhoInputMethodService : InputMethodService() {
         val shiftWasReset = shiftEnabled && !capsLock
         if (shiftWasReset) shiftEnabled = false
         if (shiftWasReset) renderKeys()
+        lastEditorTextSnapshot = readEditorTextSnapshot().orEmpty()
         refreshTopStrip()
     }
 
@@ -572,7 +657,7 @@ class LekhoInputMethodService : InputMethodService() {
                 separator?.let { connection.commitText(it, 1) }
             }
             val alreadySavedDuringPause = lastIdleSavedToken == token && lastIdleSavedMarathiMode == marathiMode
-            if (!alreadySavedDuringPause) remember(completedWord)
+            if (!alreadySavedDuringPause) remember(completedWord, sourceToken = token, sourceMode = marathiMode)
         } else {
             separator?.let { connection.commitText(it, 1) }
         }
@@ -581,6 +666,7 @@ class LekhoInputMethodService : InputMethodService() {
         composingTokenBuffer = ""
         lastIdleSavedToken = null
         lastIdleSavedMarathiMode = null
+        lastEditorTextSnapshot = readEditorTextSnapshot().orEmpty()
     }
 
     private fun scheduleTypingPauseSave() {
@@ -608,18 +694,24 @@ class LekhoInputMethodService : InputMethodService() {
         if (token.isBlank()) return
         if (lastIdleSavedToken == token && lastIdleSavedMarathiMode == marathiMode) return
         val word = if (marathiMode) WordEngine.transliterate(token) ?: token else token
-        remember(word)
+        remember(word, sourceToken = token, sourceMode = marathiMode)
         lastIdleSavedToken = token
         lastIdleSavedMarathiMode = marathiMode
     }
 
-    private fun loadEnglishDictionaryIfNeeded() {
-        if (englishDictionaryLoaded) return
-        val words = runCatching {
-            assets.open("english_words.txt").bufferedReader().useLines { sequence -> sequence.toList() }
-        }.getOrDefault(emptyList())
-        WordEngine.addEnglishDictionaryWords(words)
-        englishDictionaryLoaded = true
+    private fun loadEnglishDictionaryInBackground() {
+        if (englishDictionaryLoadStarted) return
+        englishDictionaryLoadStarted = true
+        engineExecutor.execute {
+            val words = runCatching {
+                assets.open("english_words.txt").bufferedReader().useLines { sequence -> sequence.toList() }
+            }.getOrDefault(emptyList())
+            WordEngine.addEnglishDictionaryWords(words)
+            typingPauseHandler.post {
+                suggestionCache.clear()
+                if (root != null) refreshTopStrip()
+            }
+        }
     }
 
     private fun refreshTopStrip() {
@@ -714,7 +806,7 @@ class LekhoInputMethodService : InputMethodService() {
                     composingTokenBuffer = ""
                     lastIdleSavedToken = null
                     lastIdleSavedMarathiMode = null
-                    if (!alreadySavedDuringPause) remember(word)
+                    if (!alreadySavedDuringPause) remember(word, sourceToken = tokenNow, sourceMode = marathiMode)
                     moreToolsMode = false
                     refreshTopStrip()
                 }
@@ -730,8 +822,34 @@ class LekhoInputMethodService : InputMethodService() {
     }
 
     private fun updateSuggestionCells(token: String) {
-        val suggestions = WordEngine.suggestions(token, marathiMode).take(10)
-        val visible = if (suggestions.isEmpty()) listOf(token) else suggestions
+        if (suggestionCells.isEmpty()) return
+        val mode = marathiMode
+        val requestId = suggestionRequest.incrementAndGet()
+        val cacheKey = (if (mode) "mr:" else "en:") + token
+        val cached = suggestionCache[cacheKey]
+        if (cached != null) {
+            applySuggestionCells(token, cached)
+            return
+        }
+
+        // Show a responsive fallback immediately, then calculate the full candidate list
+        // off the UI thread. Older queued keystroke requests are skipped by the generation id.
+        applySuggestionCells(token, listOf(token))
+        engineExecutor.execute {
+            if (requestId != suggestionRequest.get()) return@execute
+            val result = runCatching { WordEngine.suggestions(token, mode).take(10) }
+                .getOrDefault(listOf(token))
+            typingPauseHandler.post {
+                if (requestId != suggestionRequest.get() || marathiMode != mode ||
+                    currentToken() != token || activeTopStripMode != TopStripMode.SUGGESTIONS) return@post
+                suggestionCache[cacheKey] = result
+                applySuggestionCells(token, result)
+            }
+        }
+    }
+
+    private fun applySuggestionCells(token: String, suggestions: List<String>) {
+        val visible = suggestions.ifEmpty { listOf(token) }.take(10)
         suggestionCells.forEachIndexed { index, cell ->
             val word = visible.getOrNull(index)
             if (word == null) {
@@ -851,25 +969,55 @@ class LekhoInputMethodService : InputMethodService() {
         refreshTopStrip()
     }
 
-    private fun remember(text: String) {
+    private fun savePendingExternalSendWord() {
+        val token = pendingExternalSendToken
+        val mode = pendingExternalSendMode
+        pendingExternalSendToken = null
+        if (token.isNullOrBlank() || isSensitiveField()) return
+        val alreadySaved = lastHistorySourceToken == token && lastHistorySourceMode == mode
+        if (!alreadySaved && !(lastIdleSavedToken == token && lastIdleSavedMarathiMode == mode)) {
+            val word = if (mode) WordEngine.transliterate(token) ?: token else token
+            remember(word, sourceToken = token, sourceMode = mode)
+        }
+    }
+
+    private fun remember(text: String, sourceToken: String? = null, sourceMode: Boolean = marathiMode) {
         if (isSensitiveField()) return
         val normalized = text.trim().replace('\n', ' ')
         if (!prefs.getBoolean(KEY_HISTORY_ENABLED, true) || normalized.isBlank() || normalized.length > 120) return
-        // Preserve every committed occurrence in order, including repeated words.
-        val updatedHistory = HistorySequence.append(history, normalized)
-        history.clear()
-        history.addAll(updatedHistory)
-        prefs.edit().putString(KEY_HISTORY, history.joinToString("\n")).apply()
+        // Persist through a serial SQLite executor so disk I/O never blocks fast key presses.
+        HistoryStore.appendAsync(this, normalized)
+        historyCacheRevision++
+        history.add(normalized)
+        while (history.size > recentHistoryCacheSize) history.removeAt(0)
+        if (!sourceToken.isNullOrBlank()) {
+            lastHistorySourceToken = sourceToken
+            lastHistorySourceMode = sourceMode
+        }
     }
 
     private fun loadHistory() {
         history.clear()
-        if (prefs.getBoolean(KEY_HISTORY_ENABLED, true)) {
-            history.addAll(
-                prefs.getString(KEY_HISTORY, "").orEmpty()
-                    .lines().filter { it.isNotBlank() }
-            )
+        if (!prefs.getBoolean(KEY_HISTORY_ENABLED, true)) return
+        val generation = ++historyLoadGeneration
+        val revisionAtRequest = historyCacheRevision
+        HistoryStore.loadRecentAsync(this, recentHistoryCacheSize) { recent ->
+            if (generation != historyLoadGeneration) return@loadRecentAsync
+            val typedWhileLoading = if (historyCacheRevision != revisionAtRequest) history.toList() else emptyList()
+            history.clear()
+            history.addAll(recent)
+            history.addAll(typedWhileLoading)
+            while (history.size > recentHistoryCacheSize) history.removeAt(0)
+            if (historyMode && root != null) refreshTopStrip()
         }
+    }
+
+    private fun readEditorTextSnapshot(): String? {
+        if (isSensitiveField()) return ""
+        val connection = currentInputConnection ?: return null
+        val before = connection.getTextBeforeCursor(320, 0)?.toString() ?: return null
+        if (before.isNotEmpty()) return before
+        return connection.getTextAfterCursor(320, 0)?.toString()
     }
 
     private fun isSensitiveField(): Boolean {
@@ -892,10 +1040,9 @@ class LekhoInputMethodService : InputMethodService() {
 
     companion object {
         private const val PREFS_NAME = "lekho_local"
-        private const val KEY_HISTORY = "history"
         private const val KEY_HISTORY_ENABLED = "history_enabled"
-        
         private const val TYPING_PAUSE_SAVE_DELAY_MS = 2000L
+        private const val EXTERNAL_SEND_CLEAR_CONFIRM_MS = 180L
         private val EMOJI_SHORTCUTS = listOf("😀", "😂", "😊", "😍", "🙏", "👍", "❤️", "🎉", "😎", "🥰")
 
         private val COLOR_PANEL = Color.rgb(241, 240, 247)

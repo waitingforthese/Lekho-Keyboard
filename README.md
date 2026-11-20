@@ -1,55 +1,46 @@
-# Lekho Keyboard — Version 1.2
+# लिखो Keyboard — Version 1.6.8
 
-Kotlin Android Input Method Editor (IME), using the user's screenshots as the UI reference. This is a Gboard-inspired layout, not Google's Gboard software or branding.
+Kotlin Android Input Method Editor (IME), with a Gboard-inspired layout. This is an independent keyboard app and is not Google's Gboard software or source code.
 
-## V1.2 changes
-- Gboard-inspired light lavender/pale grey keyboard panel, white rounded keys, subtle borders, active Shift tint and larger Space key.
-- Always-visible numeric row in letter mode.
-- Full QWERTY rows with centered home row.
-- Double-tap Shift enables Caps Lock; single Shift uppercases the next letter; key labels visibly switch to uppercase while active.
-- Backspace tap deletes one Unicode grapheme cluster; holding it repeats deletion until release.
-- Enter dispatches an editor action for Send/Search/Done fields, sends Enter key events as fallback, and commits a newline for multiline editors.
-- Toolbar controls: More/History, Settings, Marathi-English switch, Clipboard paste and recent typing history.
-- Emoji shortcut row in the suggestion strip.
-- Local history stores up to 100 committed words only, can be turned off or cleared in the app, and skips password/private-learning fields.
-- System navigation bar is tinted to match the keyboard and a bottom spacer keeps the final key row above navigation controls.
-- Adds `yashsvi` / `yashasvi` / `yashaswi` → `यशस्वी` starter dictionary entries.
+## V1.6.8 changes
+- External Send History handling: when a non-sensitive editor becomes empty after a previously observed non-empty state, only the final word is recorded after a short confirmation. The full message is never persisted.
+- SQLite-based local typing history with a maximum of 20,000 word entries. Duplicate words remain separate and ordered; the oldest entry is removed when the cap is exceeded.
+- Existing SharedPreferences history is migrated once to SQLite, preserving up to the newest 20,000 entries.
+- History screen displays 100 entries per page with a Load Older control instead of rendering the whole history at once.
+- History database reads/writes run on a serial background executor.
+- English dictionary asset loading and Marathi/English suggestion calculations run off the keyboard UI thread. A 256-entry recent-query cache is used and stale keypress calculations are discarded.
+- Keeps the 2-second pause-save behavior, PIN app lock, Marathi transliteration, 10 suggestion cells, automatic space after suggestion selection, logo and keyboard UI.
 
-## Build
-- JDK 17
-- Gradle 8.9
-- Android Gradle Plugin 8.7.3
-- Kotlin 2.0.21
-- Android SDK Platform 35
+## Existing keyboard functions
+- QWERTY keyboard, number row and symbols layout.
+- Shift, double-tap Caps Lock, Unicode grapheme-aware Backspace and long-press repeat.
+- Editor action / Enter handling.
+- Marathi + English modes and offline dictionaries.
+- Suggestions, emoji shortcuts, clipboard paste and recent history toolbar.
+- 4-digit PIN lock for the main app; the keyboard remains available in other apps without the app PIN.
+- Password and `IME_FLAG_NO_PERSONALIZED_LEARNING` fields are excluded from history.
 
-```bash
-gradle --no-daemon testDebugUnitTest assembleDebug
-```
+## Build configuration
+- Application ID: `com.example.lekho.keyboard` (unchanged)
+- versionCode: 13
+- versionName: 1.6.8
+- JDK 17, Gradle 8.9, AGP 8.7.3, Kotlin 2.0.21
+- Compile SDK 35 / Target SDK 35 / Minimum SDK 26
 
-APK output: `app/build/outputs/apk/debug/app-debug.apk`.
-
-## GitHub Actions
-Push this project to the `main` branch. The workflow at `.github/workflows/main.yml` runs unit tests and builds a debug APK artifact. You may also run it manually using Actions → Android APK Build → Run workflow.
-
-## Install and test
-1. Install the debug APK.
-2. Open Lekho Keyboard → Enable keyboard → choose Lekho Keyboard.
-3. Test in a multiline note editor (Enter should add a new line).
-4. Test in a messaging field (Enter should invoke that editor's Send action if it exposes one).
-5. Tap Shift once and verify next letter uppercase; double-tap Shift and verify Caps Lock keeps all letter labels uppercase.
-6. Hold Backspace and verify repeated deletion; include Marathi vowel marks and emoji in tests.
-7. Type words, press Space or Enter, open Settings → Recent typed words and verify saved entries. Password fields must not be recorded.
-8. Check the final key row stays above the device navigation buttons/gesture area on the target phone.
+GitHub Actions runs unit tests and assembles the debug APK. Install only after the workflow succeeds.
 
 ## Important limitations
-- The Marathi engine is still dictionary-backed, not a complete general-purpose phonetic transliteration engine. Unlisted spellings may not convert.
-- Voice typing and actual cloud translation are not included. The top toolbar focuses on implemented local actions.
-- Enter behavior varies by app/editor. Both editor-action and key-event/newline routes are implemented, but device/app testing is still required.
-- Navigation inset behavior differs by manufacturer and gesture/button navigation mode; test on the target phone before release.
-- This is a development build, not a release-signed Play Store APK.
+- Android does not send a universal callback to third-party IMEs when another app's Send button is tapped. External Send is detected by a best-effort editor-clear heuristic. Manual clearing an entire draft can look the same; apps that do not report selection updates consistently may need separate testing.
+- The 20,000-word cap applies to local History only. There is no cloud sync.
+- Suggestion calculation is moved off the UI thread, but actual typing latency and device compatibility still require testing on physical phones across Android versions and manufacturers.
+- Voice typing, swipe typing, full predictive learning and a full Gboard-equivalent language model are not included.
+- This is a debug development project, not a release-signed Play Store package.
+
+## GitHub website workflow
+1. Create branch `v1.6.8-send-history-db-fast-suggestions` from the current `main`.
+2. Replace the files listed in `README_V1_6_8_GITHUB_WEB_ONLY.txt` and create `HistoryStore.kt` at the specified path.
+3. Open a Pull Request targeting `main`.
+4. Merge only after GitHub Actions unit tests and `assembleDebug` both succeed.
 
 ## Privacy
-No INTERNET permission is declared. Only committed words are saved locally (not full messages). History is capped at 100 words, can be disabled or cleared, and is suppressed for password/private-learning fields. Clipboard text is read only after the user taps Paste.
-
-## Application ID
-`com.example.lekho.keyboard` — choose the final reverse-domain application ID before first public release.
+History stays on this device. The transient editor snapshot is used only to infer an external Send clear; it is not stored. Password/private fields are excluded. Clipboard contents are accessed only when the user taps Paste.

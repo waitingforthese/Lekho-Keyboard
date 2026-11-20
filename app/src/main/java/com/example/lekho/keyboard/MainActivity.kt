@@ -25,6 +25,8 @@ class MainActivity : Activity() {
     private var isUnlocked = false
     private var lockOnReturn = false
     private var mainContentVisible = false
+    private var historyOffset = 0
+    private var historyLoading = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -242,7 +244,7 @@ class MainActivity : Activity() {
             setTextColor(NAVY)
         })
         root.addView(TextView(this).apply {
-            text = "Version 1.6.7 · Marathi + English Keyboard"
+            text = "Version 1.6.8 · Marathi + English Keyboard"
             textSize = 14f
             setTextColor(MUTED)
             setPadding(0, dp(5), 0, dp(20))
@@ -316,13 +318,15 @@ class MainActivity : Activity() {
             isChecked = prefs.getBoolean("history_enabled", true)
             setOnCheckedChangeListener { _, checked ->
                 prefs.edit().putBoolean("history_enabled", checked).apply()
-                if (!checked) prefs.edit().remove("history").apply()
-                refreshHistory()
+                if (!checked) {
+                    HistoryStore.clearAsync(this) { refreshHistory() }
+                } else {
+                    refreshHistory()
+                }
             }
         }, match())
         root.addView(actionButton("Clear saved typing history") {
-            prefs.edit().remove("history").apply()
-            refreshHistory()
+            HistoryStore.clearAsync(this) { refreshHistory() }
         }, match())
         root.addView(TextView(this).apply {
             text = "Recent typed words"
@@ -337,7 +341,7 @@ class MainActivity : Activity() {
         }
         root.addView(historyContainer, match())
         root.addView(TextView(this).apply {
-            text = "All committed words and words paused on are saved on this device without a fixed word-count limit until you clear them. Password fields and editors that disable personalized learning are excluded. Clipboard content is read only when you tap Paste. History is stored locally and can be disabled or cleared here."
+            text = "Up to 20,000 words are saved locally. Older entries are removed automatically when the limit is reached. Password fields and editors that disable personalized learning are excluded. History can be disabled or cleared here."
             textSize = 13f
             setTextColor(MUTED)
             setPadding(0, dp(14), 0, 0)
@@ -348,9 +352,23 @@ class MainActivity : Activity() {
     }
 
     private fun refreshHistory() {
-        if (!mainContentVisible || !::historyContainer.isInitialized) return
-        historyContainer.removeAllViews()
+        historyOffset = 0
+        loadHistoryPage(reset = true)
+    }
+
+    private fun loadOlderHistory() {
+        if (historyLoading) return
+        if (historyContainer.childCount > 0) {
+            historyContainer.removeViewAt(historyContainer.childCount - 1)
+        }
+        loadHistoryPage(reset = false)
+    }
+
+    private fun loadHistoryPage(reset: Boolean) {
+        if (!mainContentVisible || !::historyContainer.isInitialized || historyLoading) return
+        if (reset) historyContainer.removeAllViews()
         if (!prefs.getBoolean("history_enabled", true)) {
+            historyContainer.removeAllViews()
             historyContainer.addView(TextView(this).apply {
                 text = "Typing history is turned off."
                 textSize = 14f
@@ -358,26 +376,56 @@ class MainActivity : Activity() {
             })
             return
         }
-        val items = prefs.getString("history", "").orEmpty().lines().filter { it.isNotBlank() }.asReversed()
-        if (items.isEmpty()) {
+
+        historyLoading = true
+        if (reset) {
             historyContainer.addView(TextView(this).apply {
-                text = "No saved words yet. Your committed words will appear here."
+                text = "Loading saved words…"
                 textSize = 14f
                 setTextColor(MUTED)
             })
-            return
         }
-        items.forEachIndexed { index, word ->
-            historyContainer.addView(TextView(this).apply {
-                text = "${index + 1}.  $word"
-                textSize = 15f
-                setTextColor(TEXT)
-                setPadding(0, dp(6), 0, dp(6))
-            })
-            if (index != items.lastIndex) {
-                historyContainer.addView(View(this).apply {
-                    setBackgroundColor(0xFFE8EAF0.toInt())
-                }, LinearLayout.LayoutParams(-1, dp(1)))
+        val requestedOffset = historyOffset
+        HistoryStore.loadPageAsync(this, requestedOffset, HISTORY_PAGE_SIZE) { page ->
+            historyLoading = false
+            if (isFinishing || !mainContentVisible || !::historyContainer.isInitialized) return@loadPageAsync
+            if (reset) historyContainer.removeAllViews()
+
+            if (page.total < 0) {
+                historyContainer.addView(TextView(this).apply {
+                    text = "History load failed. Please reopen this screen."
+                    textSize = 14f
+                    setTextColor(MUTED)
+                })
+                return@loadPageAsync
+            }
+            if (page.total == 0 && historyOffset == 0) {
+                historyContainer.addView(TextView(this).apply {
+                    text = "No saved words yet. Your committed words will appear here."
+                    textSize = 14f
+                    setTextColor(MUTED)
+                })
+                return@loadPageAsync
+            }
+
+            page.wordsNewestFirst.forEachIndexed { index, word ->
+                historyContainer.addView(TextView(this).apply {
+                    text = "${requestedOffset + index + 1}.  $word"
+                    textSize = 15f
+                    setTextColor(TEXT)
+                    setPadding(0, dp(6), 0, dp(6))
+                })
+                if (index != page.wordsNewestFirst.lastIndex) {
+                    historyContainer.addView(View(this).apply {
+                        setBackgroundColor(0xFFE8EAF0.toInt())
+                    }, LinearLayout.LayoutParams(-1, dp(1)))
+                }
+            }
+            historyOffset = requestedOffset + page.wordsNewestFirst.size
+            if (historyOffset < page.total) {
+                historyContainer.addView(actionButton("Load older words (${page.total - historyOffset} remaining)") {
+                    loadOlderHistory()
+                }, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(10) })
             }
         }
     }
@@ -421,6 +469,7 @@ class MainActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val HISTORY_PAGE_SIZE = 100
         private val BG = 0xFFF0EFF6.toInt()
         private val NAVY = 0xFF1F3448.toInt()
         private val TEXT = 0xFF263746.toInt()

@@ -1,6 +1,7 @@
 package com.example.lekho.keyboard
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class HistorySequenceTest {
@@ -11,12 +12,12 @@ class HistorySequenceTest {
     }
 
     @Test
-    fun keepsAllEntriesBeyondOneHundredWithoutDroppingOldWords() {
-        val previous = (1..250).map { "word$it" }
-        val result = HistorySequence.append(previous, "word251")
-        assertEquals(251, result.size)
-        assertEquals("word1", result.first())
-        assertEquals("word251", result.last())
+    fun keepsAtMostTwentyThousandMostRecentWords() {
+        val previous = (1..20_000).map { "word$it" }
+        val result = HistorySequence.append(previous, "word20001")
+        assertEquals(20_000, result.size)
+        assertEquals("word2", result.first())
+        assertEquals("word20001", result.last())
     }
 
     @Test
@@ -25,7 +26,17 @@ class HistorySequenceTest {
     }
 
     @Test
-    fun doesNotSplitNewLinesIntoSeparateHistoryRows() {
+    fun convertsLineBreaksToOneHistoryRow() {
         assertEquals(listOf("पहिला दुसरा"), HistorySequence.append(emptyList(), " पहिला\nदुसरा "))
+    }
+
+    @Test
+    fun extractsLastWordFromSentMessageSnapshot() {
+        assertEquals("नमस्कार", HistorySequence.extractLastWord("आजचे काम पूर्ण झाले नमस्कार!  "))
+    }
+
+    @Test
+    fun returnsNullWhenSnapshotHasNoWord() {
+        assertNull(HistorySequence.extractLastWord("   ... 123"))
     }
 }

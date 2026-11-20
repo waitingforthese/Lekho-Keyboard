@@ -12,6 +12,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -58,7 +59,7 @@ class MainActivity : Activity() {
     private fun showUnlockScreen() {
         isUnlocked = false
         showPinEntryScreen(
-            title = "Lekho Keyboard Locked",
+            title = "लिखो लॉक आहे",
             subtitle = "अॅप उघडण्यासाठी तुमचा 4 अंकी PIN टाका",
             actionLabel = "Unlock"
         ) { enteredPin ->
@@ -128,9 +129,10 @@ class MainActivity : Activity() {
             setPadding(dp(28), dp(30), dp(28), dp(24))
             setBackgroundColor(BG)
         }
+        screen.addView(brandLogo(112))
 
         screen.addView(TextView(this).apply {
-            text = "Lekho Keyboard"
+            text = "लिखो"
             textSize = 27f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(NAVY)
@@ -233,13 +235,14 @@ class MainActivity : Activity() {
             setPadding(dp(22), dp(30), dp(22), dp(24))
             setBackgroundColor(BG)
         }
+        root.addView(brandLogo(96))
         root.addView(TextView(this).apply {
-            text = "Lekho Keyboard"
+            text = "लिखो"
             textSize = 29f
             setTextColor(NAVY)
         })
         root.addView(TextView(this).apply {
-            text = "Version 1.6.5 · Gboard-inspired development build"
+            text = "Version 1.6.6 · Marathi + English Keyboard"
             textSize = 14f
             setTextColor(MUTED)
             setPadding(0, dp(5), 0, dp(20))
@@ -250,10 +253,10 @@ class MainActivity : Activity() {
             setTextColor(NAVY)
             setPadding(0, 0, 0, dp(8))
         })
-        root.addView(actionButton("1. Enable Lekho Keyboard") {
+        root.addView(actionButton("1. Enable लिखो") {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
         }, match())
-        root.addView(actionButton("2. Choose Lekho Keyboard") {
+        root.addView(actionButton("2. Choose लिखो") {
             val manager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             manager.showInputMethodPicker()
         }, match())
@@ -376,6 +379,16 @@ class MainActivity : Activity() {
                     setBackgroundColor(0xFFE8EAF0.toInt())
                 }, LinearLayout.LayoutParams(-1, dp(1)))
             }
+        }
+    }
+
+    private fun brandLogo(size: Int) = ImageView(this).apply {
+        setImageResource(R.drawable.logo_likho)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        contentDescription = "लिखो लोगो"
+        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(12)
         }
     }
 

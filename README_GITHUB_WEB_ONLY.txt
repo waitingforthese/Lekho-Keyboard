@@ -1,53 +1,52 @@
-Lekho Keyboard V1.6.5 - App PIN Lock
-===================================
+LEKHO KEYBOARD V1.6.6 — BRANDING + SEND HISTORY UPDATE
+======================================================
 
-This update adds a PIN gate to the Lekho Keyboard launcher/settings activity only.
-The InputMethodService is not locked, so Lekho Keyboard remains available while typing
-inside other apps without asking for the app PIN.
+This ZIP is a GitHub-website-only update package. No Git Bash, Terminal, GitHub Desktop,
+or local clone is required.
 
-What is included
-----------------
-1. MainActivity.kt (replace existing file)
-   - First launch: create and confirm a 4-digit numeric PIN.
-   - Later launches/resumes after the app leaves the foreground: require the PIN.
-   - Change App PIN: verifies the current PIN before allowing a new PIN.
-   - Numeric PIN pad is drawn inside the app; it does not rely on the selected IME.
-   - Five failed attempts cause a 30-second pause.
-2. PinSecurity.kt (new file)
-   - Stores a salted PBKDF2-HMAC-SHA256 PIN hash, never the raw PIN.
-   - Stores data in app-private SharedPreferences.
-3. HistorySequence.kt (replace existing file)
-   - Includes the Kotlin newline sanitizing compile fix: replace("\n", " ").
-4. app/build.gradle.kts (replace existing file)
-   - versionCode = 11
-   - versionName = "1.6.5"
+What changes:
+- App display name: "लिखो" (launcher label, app activity, keyboard picker/service label).
+- Recreated no-text fountain-pen logo based on the user's uploaded reference (watermark-free,
+  new generated artwork), used for launcher icon and in-app PIN/main screen.
+- Send history fix: detects an app's external Send button clearing the current composing text
+  and records the active word to typing history without putting it back into the empty editor.
+- Keeps PIN lock, Marathi/English modes, 2-second pause save, suggestions, and keyboard UI.
+- Version code 11 / version name 1.6.6.
 
-GitHub website-only steps
--------------------------
-1. Open the Lekho-Keyboard repository in your browser.
-2. Create a new branch named: v1.6.5-app-pin-lock
-   Use the current main branch as the starting point.
-3. Extract this ZIP on your computer.
-4. Replace these existing files by opening each file in GitHub, choosing Edit (pencil),
-   selecting all old content, and pasting the complete replacement file content:
-   - app/src/main/java/com/example/lekho/keyboard/MainActivity.kt
-   - app/src/main/java/com/example/lekho/keyboard/HistorySequence.kt
-   - app/build.gradle.kts
-5. Create this new file using Add file > Create new file:
-   - app/src/main/java/com/example/lekho/keyboard/PinSecurity.kt
-6. Commit the changes to v1.6.5-app-pin-lock.
-7. Open a Pull Request to main and check GitHub Actions. Merge only if tests and APK build pass.
+IMPORTANT SERVICE PATCH:
+The current service file is large. To avoid accidentally replacing unrelated keyboard behavior,
+the service correction is included as SERVICE_SEND_HISTORY_FIX.txt with six precise GitHub
+web-editor actions. Apply each action carefully to the existing file:
+app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
 
-Important behavior and recovery
--------------------------------
-- PIN applies only when opening the Lekho Keyboard app/settings screen.
-- PIN does NOT lock the keyboard service when it is used in WhatsApp, Messages, or other apps.
-- A 4-digit PIN is required. Five incorrect attempts trigger a 30-second cooldown.
-- The app has android:allowBackup="false" in the existing manifest.
-- If the PIN is forgotten, clearing app data or reinstalling resets the PIN, but also removes
-  local typing history and app settings. There is intentionally no unauthenticated PIN bypass.
+FILES TO REPLACE:
+1. app/src/main/java/com/example/lekho/keyboard/MainActivity.kt
+2. app/src/main/AndroidManifest.xml
+3. app/build.gradle.kts
 
-Build status
-------------
-The ZIP contents and paths should be verified before use. Android Gradle Build has not been
-run for this update in this environment. GitHub Actions must pass before installing the APK.
+FILES TO CREATE:
+4. app/src/main/res/values/strings.xml
+5. app/src/main/res/drawable-nodpi/logo_likho.png
+6. app/src/main/res/drawable-nodpi/ic_launcher_foreground.png
+7. app/src/main/res/drawable/ic_launcher_background.xml
+8. app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+9. app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+10. Launcher PNGs under mipmap-mdpi, mipmap-hdpi, mipmap-xhdpi, mipmap-xxhdpi,
+    mipmap-xxxhdpi (both ic_launcher.png and ic_launcher_round.png).
+
+DO NOT replace PinSecurity.kt or HistorySequence.kt; keep the versions already in main.
+Keep the same applicationId/package name: com.example.lekho.keyboard. This is an app update,
+not a new app. Existing installed app data, PIN and typing history should remain intact.
+
+GitHub website workflow:
+1. Create branch v1.6.6-likho-branding-send-history from the current main branch.
+2. Replace the 3 existing files listed above using GitHub's pencil editor and full file contents.
+3. Create the new resource files with Add file > Create new file, or upload individual PNG assets
+   via Add file > Upload files, preserving the exact folder paths listed above.
+4. Apply SERVICE_SEND_HISTORY_FIX.txt changes to LekhoInputMethodService.kt in GitHub's web editor.
+5. Commit changes to the new branch and create a Pull Request targeting main.
+6. Merge only after GitHub Actions reports a successful unit-test + assembleDebug build.
+7. Do not install any APK from a failed or incomplete workflow run.
+
+App icon is black fountain pen artwork with transparent foreground on white adaptive/legacy background.
+It contains no text, as requested.

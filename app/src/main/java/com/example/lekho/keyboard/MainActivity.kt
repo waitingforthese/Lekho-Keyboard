@@ -319,7 +319,7 @@ class MainActivity : Activity() {
             setOnCheckedChangeListener { _, checked ->
                 prefs.edit().putBoolean("history_enabled", checked).apply()
                 if (!checked) {
-                    HistoryStore.clearAsync(this) { refreshHistory() }
+                    HistoryStore.clearAsync(this@MainActivity) { refreshHistory() }
                 } else {
                     refreshHistory()
                 }

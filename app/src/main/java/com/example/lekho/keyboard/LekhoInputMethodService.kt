@@ -856,7 +856,7 @@ class LekhoInputMethodService : InputMethodService() {
         val normalized = text.trim().replace('\n', ' ')
         if (!prefs.getBoolean(KEY_HISTORY_ENABLED, true) || normalized.isBlank() || normalized.length > 120) return
         // Preserve every committed occurrence in order, including repeated words.
-        val updatedHistory = HistorySequence.append(history, normalized, MAX_HISTORY_ITEMS)
+        val updatedHistory = HistorySequence.append(history, normalized)
         history.clear()
         history.addAll(updatedHistory)
         prefs.edit().putString(KEY_HISTORY, history.joinToString("\n")).apply()
@@ -867,7 +867,7 @@ class LekhoInputMethodService : InputMethodService() {
         if (prefs.getBoolean(KEY_HISTORY_ENABLED, true)) {
             history.addAll(
                 prefs.getString(KEY_HISTORY, "").orEmpty()
-                    .lines().filter { it.isNotBlank() }.takeLast(MAX_HISTORY_ITEMS)
+                    .lines().filter { it.isNotBlank() }
             )
         }
     }
@@ -894,7 +894,7 @@ class LekhoInputMethodService : InputMethodService() {
         private const val PREFS_NAME = "lekho_local"
         private const val KEY_HISTORY = "history"
         private const val KEY_HISTORY_ENABLED = "history_enabled"
-        private const val MAX_HISTORY_ITEMS = 100
+        
         private const val TYPING_PAUSE_SAVE_DELAY_MS = 2000L
         private val EMOJI_SHORTCUTS = listOf("😀", "😂", "😊", "😍", "🙏", "👍", "❤️", "🎉", "😎", "🥰")
 

@@ -1,12 +1,10 @@
 package com.example.lekho.keyboard
 
-/** Pure helper for an ordered, duplicate-preserving local word history. */
+/** Ordered, duplicate-preserving local word history with no application-level item cap. */
 internal object HistorySequence {
-    fun append(history: List<String>, word: String, maxItems: Int = 100): List<String> {
+    fun append(history: List<String>, word: String): List<String> {
         val normalized = word.trim().replace("\n", " ")
-        val limit = maxItems.coerceAtLeast(0)
-        if (limit == 0) return emptyList()
-        if (normalized.isBlank()) return history.takeLast(limit)
-        return (history + normalized).takeLast(limit)
+        if (normalized.isBlank()) return history
+        return history + normalized
     }
 }

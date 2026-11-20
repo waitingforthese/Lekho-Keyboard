@@ -242,7 +242,7 @@ class MainActivity : Activity() {
             setTextColor(NAVY)
         })
         root.addView(TextView(this).apply {
-            text = "Version 1.6.6 · Marathi + English Keyboard"
+            text = "Version 1.6.7 · Marathi + English Keyboard"
             textSize = 14f
             setTextColor(MUTED)
             setPadding(0, dp(5), 0, dp(20))
@@ -337,7 +337,7 @@ class MainActivity : Activity() {
         }
         root.addView(historyContainer, match())
         root.addView(TextView(this).apply {
-            text = "Only committed words and words paused on are saved (up to 100). Password fields and editors that disable personalized learning are excluded. Clipboard content is read only when you tap Paste. History is stored on this device and can be disabled or cleared here."
+            text = "All committed words and words paused on are saved on this device without a fixed word-count limit until you clear them. Password fields and editors that disable personalized learning are excluded. Clipboard content is read only when you tap Paste. History is stored locally and can be disabled or cleared here."
             textSize = 13f
             setTextColor(MUTED)
             setPadding(0, dp(14), 0, 0)
@@ -367,7 +367,7 @@ class MainActivity : Activity() {
             })
             return
         }
-        items.take(100).forEachIndexed { index, word ->
+        items.forEachIndexed { index, word ->
             historyContainer.addView(TextView(this).apply {
                 text = "${index + 1}.  $word"
                 textSize = 15f

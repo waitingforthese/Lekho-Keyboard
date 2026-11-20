@@ -1,0 +1,50 @@
+LIKHO V1.6.7 — REMOVE THE 100-WORD HISTORY CAP
+GitHub Website only. Apply the following exact edits to:
+app/src/main/java/com/example/lekho/keyboard/LekhoInputMethodService.kt
+
+1) In remember(), REPLACE:
+
+    val updatedHistory = HistorySequence.append(history, normalized, MAX_HISTORY_ITEMS)
+
+WITH:
+
+    val updatedHistory = HistorySequence.append(history, normalized)
+
+Keep the following lines as they are:
+    history.clear()
+    history.addAll(updatedHistory)
+    prefs.edit().putString(KEY_HISTORY, history.joinToString("\n")).apply()
+
+2) In loadHistory(), REPLACE:
+
+    prefs.getString(KEY_HISTORY, "").orEmpty()
+        .lines().filter { it.isNotBlank() }.takeLast(MAX_HISTORY_ITEMS)
+
+WITH:
+
+    prefs.getString(KEY_HISTORY, "").orEmpty()
+        .lines().filter { it.isNotBlank() }
+
+3) In the companion object, DELETE this constant completely:
+
+    private const val MAX_HISTORY_ITEMS = 100
+
+Do not delete or change:
+    private const val TYPING_PAUSE_SAVE_DELAY_MS = 2000L
+
+4) Search the whole LekhoInputMethodService.kt for MAX_HISTORY_ITEMS.
+There must be ZERO remaining references.
+
+5) Do not alter the Send-history reconciliation code, PIN lock, sensitive-field exclusions,
+Marathi/English suggestions, automatic suggestion space, backspace, or keyboard UI.
+
+Expected result:
+- No application-level 100-word history cap.
+- Old saved words remain in chronological order.
+- Duplicate words remain saved as separate entries.
+- New words from pause-save, suggestion selection, Space, and Enter/Send continue to append.
+- The History screen displays all saved entries, not only the newest 100.
+
+Storage note: this removes the fixed count cap. The existing app stores local history in one
+SharedPreferences string, so the practical upper bound remains the phone's available storage
+and memory; very large histories may eventually take longer to load. No cloud upload is added.

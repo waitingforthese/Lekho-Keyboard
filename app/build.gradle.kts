@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.lekho.keyboard"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.6.6"
+        versionCode = 12
+        versionName = "1.6.7"
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
     }
 
